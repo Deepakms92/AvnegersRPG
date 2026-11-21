@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync } from 'expo-audio';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Platform, Vibration } from 'react-native';
 
 import { cardById, RARITY } from './cards';
@@ -42,6 +43,13 @@ export function configureNotificationHandler() {
 
 /** Channel used when scheduling; falls back if the loud one can't be created. */
 let activeChannelId: string | undefined = CHANNEL_ID;
+/** Whether the vibrate-only channel for discreet mode exists. */
+let quietChannelReady = false;
+/** Whether the quiet channel for rewards and confirmations exists. */
+let infoChannelReady = false;
+
+/** Expo Go can't create custom notification channels; the installed app can. */
+const IN_EXPO_GO = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 const BASE_CHANNEL = {
   name: 'Move reminders (loud)',
@@ -63,6 +71,14 @@ const BASE_CHANNEL = {
 export async function setupNotifications() {
   await setupActions();
   if (Platform.OS !== 'android') return;
+  if (IN_EXPO_GO) {
+    // Expo Go rejects custom channels, so reminders use its default channel there.
+    // The installed app (APK) creates the loud and discreet channels normally.
+    activeChannelId = undefined;
+    quietChannelReady = false;
+    infoChannelReady = false;
+    return;
+  }
   try {
     await Notifications.setNotificationChannelAsync(INFO_CHANNEL_ID, {
       name: 'Rewards and confirmations',
@@ -71,7 +87,9 @@ export async function setupNotifications() {
       sound: null,
       enableVibrate: false,
     });
+    infoChannelReady = true;
   } catch (e) {
+    infoChannelReady = false;
     console.warn('[move-reminder] Could not create the info channel.', e);
   }
   try {
@@ -83,7 +101,9 @@ export async function setupNotifications() {
       vibrationPattern: [0, 400, 250, 400],
       enableVibrate: true,
     });
+    quietChannelReady = true;
   } catch (e) {
+    quietChannelReady = false;
     console.warn('[move-reminder] Could not create the discreet channel.', e);
   }
   try {
@@ -169,7 +189,7 @@ export async function scheduleForState(state: PersistedState) {
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: r.when,
-        channelId: discreet && Platform.OS === 'android' ? QUIET_CHANNEL_ID : activeChannelId,
+        channelId: discreet && quietChannelReady ? QUIET_CHANNEL_ID : activeChannelId,
       },
     });
   }
@@ -180,7 +200,7 @@ export async function showInfo(title: string, body: string) {
   try {
     await Notifications.scheduleNotificationAsync({
       content: { title, body, sound: false, data: { kind: 'move-info' } },
-      trigger: Platform.OS === 'android' ? { channelId: INFO_CHANNEL_ID } : null,
+      trigger: infoChannelReady ? { channelId: INFO_CHANNEL_ID } : null,
     });
   } catch (e) {
     console.warn('[move-reminder] Could not show info notification.', e);
