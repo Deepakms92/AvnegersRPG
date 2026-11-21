@@ -1,5 +1,8 @@
 import { registerRootComponent } from 'expo';
 
+// Must load first: handles notification buttons while the app is closed.
+import './src/backgroundTask';
+
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

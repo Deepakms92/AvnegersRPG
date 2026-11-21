@@ -5,9 +5,18 @@ import { Platform, Vibration } from 'react-native';
 
 export const CHANNEL_ID = 'move-reminder-loud';
 const CHANNEL_ID_FALLBACK = 'move-reminder';
+const INFO_CHANNEL_ID = 'move-reminder-info';
 
-/** Follow-up nags (minutes after the first alert) if you ignore the reminder. */
-const NAG_OFFSETS_MIN = [2, 5, 10, 20];
+export const CATEGORY_ID = 'move-reminder';
+export const ACTION_MOVED = 'moved';
+export const ACTION_SNOOZE = 'snooze';
+export const SNOOZE_MIN = 5;
+
+/**
+ * Follow-up nags (minutes after the first alert) if you ignore the reminder:
+ * quickly at first, then every 10 minutes for 3 hours, until you move.
+ */
+const NAG_OFFSETS_MIN = [2, 5, 10, 15, 20, ...Array.from({ length: 16 }, (_, i) => 30 + i * 10)];
 
 const PHRASES = [
   "Hey! You've been sitting for a long time. Time to stand up and move a bit!",
@@ -54,7 +63,19 @@ const BASE_CHANNEL = {
  * Android locks channel settings once created; uninstall the app to change them.
  */
 export async function setupAndroidChannel() {
+  await setupActions();
   if (Platform.OS !== 'android') return;
+  try {
+    await Notifications.setNotificationChannelAsync(INFO_CHANNEL_ID, {
+      name: 'Rewards and confirmations',
+      description: 'Quiet messages like "+25 XP, energy restored"',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      sound: null,
+      enableVibrate: false,
+    });
+  } catch (e) {
+    console.warn('[move-reminder] Could not create the info channel.', e);
+  }
   try {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       ...BASE_CHANNEL,
@@ -80,6 +101,22 @@ export async function setupAndroidChannel() {
   }
 }
 
+/** "I moved!" and "Snooze" buttons on every reminder notification. */
+async function setupActions() {
+  try {
+    await Notifications.setNotificationCategoryAsync(CATEGORY_ID, [
+      { identifier: ACTION_MOVED, buttonTitle: '✅ I moved!', options: { opensAppToForeground: false } },
+      {
+        identifier: ACTION_SNOOZE,
+        buttonTitle: `⏰ Snooze ${SNOOZE_MIN} min`,
+        options: { opensAppToForeground: false },
+      },
+    ]);
+  } catch (e) {
+    console.warn('[move-reminder] Could not register notification buttons.', e);
+  }
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
@@ -88,22 +125,23 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 /**
- * Schedules the main reminder plus a few follow-up nags. These fire even if the
- * app is in the background or killed, so you still get a loud alert.
+ * Schedules the main reminder plus follow-up nags. These fire even if the app
+ * is in the background or killed, and keep coming until you move or snooze.
  */
-export async function scheduleReminders(dueAt: number, intervalMin: number) {
+export async function scheduleReminders(dueAt: number, lastMovedAt: number) {
   await Notifications.cancelAllScheduledNotificationsAsync();
   const times = [0, ...NAG_OFFSETS_MIN].map((offset) => dueAt + offset * 60_000);
   for (const [i, when] of times.entries()) {
     if (when <= Date.now()) continue;
-    const sittingMin = intervalMin + (i === 0 ? 0 : NAG_OFFSETS_MIN[i - 1]);
+    const sittingMin = Math.max(1, Math.round((when - lastMovedAt) / 60_000));
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: i === 0 ? '🚶 Time to move!' : `⚠️ Still sitting — ${sittingMin} min`,
+        title: i === 0 ? '🧟 Energy at 0%, time to move!' : `⚠️ Still sitting: ${sittingMin} min`,
         body: pickPhrase(sittingMin),
         sound: 'default',
         vibrate: [0, 800, 400, 800],
         priority: Notifications.AndroidNotificationPriority.MAX,
+        categoryIdentifier: CATEGORY_ID,
         data: { kind: 'move-reminder', sittingMin },
       },
       trigger: {
@@ -112,6 +150,18 @@ export async function scheduleReminders(dueAt: number, intervalMin: number) {
         channelId: activeChannelId,
       },
     });
+  }
+}
+
+/** A quiet, immediate notification (e.g. "+25 XP, energy restored"). */
+export async function showInfo(title: string, body: string) {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body, sound: false, data: { kind: 'move-info' } },
+      trigger: Platform.OS === 'android' ? { channelId: INFO_CHANNEL_ID } : null,
+    });
+  } catch (e) {
+    console.warn('[move-reminder] Could not show info notification.', e);
   }
 }
 

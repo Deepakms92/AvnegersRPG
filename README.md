@@ -21,10 +21,13 @@ sitting too long and need to get up and move.
 ### The reminder
 - **Loud spoken alert.** When energy runs out and the app is open, it speaks the reminder at
   full volume using text-to-speech, vibrates hard and repeats every minute until you move.
-- **Background alerts.** A reminder plus follow-up nags (+2, +5, +10 and +20 min) are scheduled
-  as local notifications. They fire even if the app is in the background or closed. In the
-  installable APK they play on the Android **alarm** audio stream, so they're loud even when
-  media volume is low.
+- **Background alerts that don't give up.** A reminder plus follow-up nags (+2, +5, +10, +15,
+  +20 min, then every 10 min for 3 hours) are scheduled as local notifications. They fire even
+  if the app is in the background or closed. In the installable APK they play on the Android
+  **alarm** audio stream, so they're loud even when media volume is low.
+- **Buttons on the notification.** **✅ I moved!** records the move, gives XP and restarts the
+  timer without opening the app. **⏰ Snooze 5 min** pauses the alerts briefly (no XP). In the
+  APK these work even when the app is closed. Expo Go can't run them in the background.
 - **Auto-reset on walking.** With the step counter enabled, about 30 steps counts as a move.
 - Settings, timer and game progress are saved on the device.
 
@@ -55,6 +58,8 @@ Or tap **Test the loud alert** in Game settings.
 | File | Purpose |
 | --- | --- |
 | `App.tsx` | Main screen, timer loop, foreground alert, step detection |
+| `src/moveService.ts` | Records a move or snooze; shared by the app and the notification buttons |
+| `src/backgroundTask.ts` | Handles notification buttons while the app is closed (Android) |
 | `src/game.ts` | XP, levels, streaks, badges (saved with AsyncStorage) |
 | `src/ui.tsx` | Game-style UI pieces: 3D buttons, energy bar, avatar, reward pop-up |
 | `src/reminder.ts` | Notification channel, scheduling, text-to-speech and vibration |

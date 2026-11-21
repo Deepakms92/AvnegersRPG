@@ -23,7 +23,8 @@ import {
   setupAndroidChannel,
   stopAlert,
 } from './src/reminder';
-import { DEFAULT_STATE, loadState, PersistedState, saveState } from './src/storage';
+import { DEFAULT_STATE, loadState, nextDueAt, PersistedState, saveState } from './src/storage';
+import { applyMove, describeMove, handleNotificationResponse } from './src/moveService';
 import {
   BADGES,
   DAILY_GOAL,
@@ -31,8 +32,6 @@ import {
   GameStats,
   levelInfo,
   loadStats,
-  recordMove,
-  saveStats,
 } from './src/game';
 import {
   Avatar,
@@ -63,8 +62,9 @@ function formatRemaining(ms: number) {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
-function mood(energy: number, enabled: boolean, overdue: boolean) {
-  if (!enabled) return { emoji: '😴', text: 'Snoozing — turn reminders on to play' };
+function mood(energy: number, enabled: boolean, overdue: boolean, snoozed: boolean) {
+  if (!enabled) return { emoji: '😴', text: 'Reminders off. Turn them on to play' };
+  if (snoozed) return { emoji: '⏰', text: 'Snoozed. Move soon!' };
   if (overdue) return { emoji: '🧟', text: 'ZOMBIE MODE! Get up and move!' };
   if (energy > 0.75) return { emoji: '😄', text: 'Fully charged' };
   if (energy > 0.5) return { emoji: '🙂', text: 'Feeling good' };
@@ -95,11 +95,12 @@ export default function App() {
 
   const intervalMs = state.intervalMin * 60_000;
   const dueAt = state.lastMovedAt + intervalMs;
-  const overdue = state.enabled && now >= dueAt;
+  const snoozed = state.enabled && now >= dueAt && now < state.snoozeUntil;
+  const overdue = state.enabled && now >= dueAt && !snoozed;
   const sittingMin = Math.floor((now - state.lastMovedAt) / 60_000);
   const energy = state.enabled ? Math.max(0, Math.min(1, (dueAt - now) / intervalMs)) : 1;
   const lvl = levelInfo(stats.xp);
-  const m = mood(energy, state.enabled, overdue);
+  const m = mood(energy, state.enabled, overdue, snoozed);
 
   const update = useCallback((patch: Partial<PersistedState>) => {
     setState((prev) => {
@@ -119,9 +120,7 @@ export default function App() {
       setLoaded(true);
       try {
         await setupAndroidChannel();
-        if (s.enabled) {
-          await scheduleReminders(s.lastMovedAt + s.intervalMin * 60_000, s.intervalMin);
-        }
+        if (s.enabled) await scheduleReminders(nextDueAt(s), s.lastMovedAt);
       } catch (e) {
         console.warn('[move-reminder] Could not schedule reminders on launch.', e);
       }
@@ -134,14 +133,22 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
+  /** Re-read saved progress (a notification button may have changed it while we were away). */
+  const reload = useCallback(async () => {
+    const [s, g] = await Promise.all([loadState(), loadStats()]);
+    setState(s);
+    setStats(g);
+    setNow(Date.now());
+  }, []);
+
   // Track whether the app is in the foreground.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
       appActive.current = s === 'active';
-      if (s === 'active') setNow(Date.now());
+      if (s === 'active') reload();
     });
     return () => sub.remove();
-  }, []);
+  }, [reload]);
 
   const speakIfDue = useCallback((minutes: number, force = false) => {
     const t = Date.now();
@@ -166,57 +173,42 @@ export default function App() {
     return () => sub.remove();
   }, [speakIfDue, state.intervalMin]);
 
+  const celebrate = useCallback((d: ReturnType<typeof describeMove>) => {
+    const color = { level: C.gold, badge: C.pink, xp: C.lime, plain: C.cyan }[d.kind];
+    setToast({ id: Date.now(), title: d.title, lines: d.lines, color });
+    say(d.speech);
+  }, []);
+
   const markMoved = useCallback(
     async (viaSteps = false) => {
       stopAlert();
-      const t = Date.now();
       lastSpokenAt.current = 0;
       setStepsSinceReset(0);
-
-      if (state.enabled) {
-        const result = recordMove(statsRef.current, {
-          now: t,
-          overdueByMs: t - (state.lastMovedAt + state.intervalMin * 60_000),
-          viaSteps,
-        });
-        setStats(result.stats);
-        saveStats(result.stats);
-
-        if (result.leveledUp) {
-          const li = levelInfo(result.stats.xp);
-          setToast({
-            id: t,
-            title: `LEVEL ${li.level}!`,
-            lines: [li.title, ...result.reasons],
-            color: C.gold,
-          });
-          say(`Level up! You are now a ${li.title}.`);
-        } else if (result.newBadges.length) {
-          const b = result.newBadges[0];
-          setToast({ id: t, title: `${b.icon} ${b.name}`, lines: ['Badge unlocked!', ...result.reasons], color: C.pink });
-          say(`Badge unlocked: ${b.name}!`);
-        } else if (result.xpGained > 0) {
-          setToast({ id: t, title: `+${result.xpGained} XP`, lines: result.reasons, color: C.lime });
-          say(viaSteps ? 'Nice walk! Energy restored.' : 'Nice! Energy restored.');
-        } else {
-          setToast({ id: t, title: 'Energy restored', lines: ['XP cooldown — move again later'], color: C.cyan });
-          say('Energy restored.');
-        }
-      }
-
-      update({ lastMovedAt: t });
-      setNow(t);
-      if (state.enabled) {
-        try {
-          await cancelReminders();
-          await scheduleReminders(t + state.intervalMin * 60_000, state.intervalMin);
-        } catch (e) {
-          console.warn('[move-reminder] Could not reschedule reminders.', e);
-        }
+      try {
+        const { state: next, result } = await applyMove({ viaSteps });
+        setState(next);
+        if (result) setStats(result.stats);
+        setNow(Date.now());
+        if (next.enabled) celebrate(describeMove(result, viaSteps));
+      } catch (e) {
+        console.warn('[move-reminder] Could not record move.', e);
       }
     },
-    [state.enabled, state.intervalMin, state.lastMovedAt, update],
+    [celebrate],
   );
+
+  // "I moved!" / "Snooze" tapped on a notification while the app is open.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(async (r) => {
+      const handled = await handleNotificationResponse(r);
+      if (!handled) return;
+      stopAlert();
+      await reload();
+      if (handled.kind === 'moved') celebrate(describeMove(handled.result, false));
+      else setToast({ id: Date.now(), title: '⏰ Snoozed', lines: ['5 more minutes'], color: C.cyan });
+    });
+    return () => sub.remove();
+  }, [celebrate, reload]);
 
   // Step detection: walking around auto-resets the timer.
   const markMovedRef = useRef(markMoved);
@@ -251,13 +243,13 @@ export default function App() {
   const toggleEnabled = async (value: boolean) => {
     if (value) {
       const t = Date.now();
-      update({ enabled: true, lastMovedAt: t });
+      update({ enabled: true, lastMovedAt: t, snoozeUntil: 0 });
       setNow(t);
       try {
         const ok = await requestNotificationPermission();
         setPermissionDenied(!ok);
         await setupAndroidChannel();
-        await scheduleReminders(t + state.intervalMin * 60_000, state.intervalMin);
+        await scheduleReminders(t + state.intervalMin * 60_000, t);
       } catch (e) {
         console.warn('[move-reminder] Could not schedule reminders.', e);
       }
@@ -270,9 +262,9 @@ export default function App() {
 
   const changeInterval = async (min: number) => {
     const t = Date.now();
-    update({ intervalMin: min, lastMovedAt: t });
+    update({ intervalMin: min, lastMovedAt: t, snoozeUntil: 0 });
     setNow(t);
-    if (state.enabled) await scheduleReminders(t + min * 60_000, min);
+    if (state.enabled) await scheduleReminders(t + min * 60_000, t);
   };
 
   const gradient = overdue ? ([C.alertTop, C.alertBottom] as const) : ([C.bgTop, C.bgBottom] as const);
@@ -320,12 +312,20 @@ export default function App() {
           <SegmentBar value={energy} color={energyColor(energy)} />
 
           <Text style={styles.timer}>
-            {!state.enabled ? '--:--' : overdue ? `+${formatRemaining(now - dueAt)}` : formatRemaining(dueAt - now)}
+            {!state.enabled
+              ? '--:--'
+              : snoozed
+                ? formatRemaining(state.snoozeUntil - now)
+                : overdue
+                  ? `+${formatRemaining(now - dueAt)}`
+                  : formatRemaining(dueAt - now)}
           </Text>
           <Text style={styles.timerCaption}>
             {!state.enabled
               ? 'reminders off'
-              : overdue
+              : snoozed
+                ? `snoozed · sitting ${sittingMin} min`
+                : overdue
                 ? `overdue · sitting ${sittingMin} min`
                 : `until energy runs out · sitting ${sittingMin} min`}
           </Text>
