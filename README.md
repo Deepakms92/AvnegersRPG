@@ -3,21 +3,30 @@
 A small React Native (Expo) Android app that **tells you out loud** when you've been
 sitting too long and need to get up and move.
 
+![Normal and overdue states](docs/preview.png)
+
 ## What it does
 
-- **Sitting timer.** Choose an interval (15, 30, 45, 60 or 90 min, plus a 1-minute test mode).
-  A countdown shows when the next reminder is due.
-- **Loud spoken alert.** When time is up and the app is open, it speaks the reminder at full
-  volume using text-to-speech, vibrates hard and turns the screen red. It repeats every
-  minute until you move.
+### The game
+- **Energy bar.** Your energy drains while you sit. When it hits 0% you go into
+  🧟 **Zombie mode**: the screen turns red and the app shouts at you until you move.
+- **XP and levels.** Every move earns XP. Bonus XP for moving within 5 minutes of an alert
+  (+15), moving before the alert (+5) or moving by walking (+5). Levels go from
+  *Couch Potato* up to *Legend of Motion*. Moves less than 5 minutes apart restore energy but
+  don't earn XP, so you can't farm XP by tapping the button.
+- **Daily quest and streak.** Make 5 moves a day for +50 XP and to keep your 🔥 streak alive.
+- **Badges.** 8 unlockable badges (First Step, Lightning, Wanderer, On Fire…).
+- Level-ups, badges and XP gains get a pop-up and a spoken announcement.
+
+### The reminder
+- **Loud spoken alert.** When energy runs out and the app is open, it speaks the reminder at
+  full volume using text-to-speech, vibrates hard and repeats every minute until you move.
 - **Background alerts.** A reminder plus follow-up nags (+2, +5, +10 and +20 min) are scheduled
-  as local notifications. They fire even if the app is in the background or closed. They use
-  a max-importance Android channel whose sound plays on the **alarm** audio stream, so they're
-  loud even when media volume is low.
-- **"I moved!" button.** Resets the timer and reschedules the reminders.
-- **Auto-reset on walking.** With the step counter enabled, about 30 steps counts as moving
-  and resets the timer.
-- Settings and timer state are saved, so the schedule comes back after the app restarts.
+  as local notifications. They fire even if the app is in the background or closed. In the
+  installable APK they play on the Android **alarm** audio stream, so they're loud even when
+  media volume is low.
+- **Auto-reset on walking.** With the step counter enabled, about 30 steps counts as a move.
+- Settings, timer and game progress are saved on the device.
 
 ## Run it
 
@@ -38,14 +47,16 @@ npx expo run:android                                 # local build (needs the An
 npx eas-cli@latest build -p android --profile preview
 ```
 
-To test quickly, pick **1 min (test)**, turn on **Reminders enabled** and wait. Or tap
-**Test the loud alert**.
+To test quickly, open **Game settings**, pick **1 min 🧪**, tap **START PLAYING** and wait.
+Or tap **Test the loud alert** in Game settings.
 
 ## Project layout
 
 | File | Purpose |
 | --- | --- |
-| `App.tsx` | UI, timer loop, foreground alert, step detection |
+| `App.tsx` | Main screen, timer loop, foreground alert, step detection |
+| `src/game.ts` | XP, levels, streaks, badges (saved with AsyncStorage) |
+| `src/ui.tsx` | Game-style UI pieces: 3D buttons, energy bar, avatar, reward pop-up |
 | `src/reminder.ts` | Notification channel, scheduling, text-to-speech and vibration |
 | `src/storage.ts` | Saved settings (AsyncStorage) |
 | `app.json` | Expo config: Android package and permissions |
@@ -63,5 +74,12 @@ To test quickly, pick **1 min (test)**, turn on **Reminders enabled** and wait. 
   battery. Excluding the app from battery optimization helps.
 - Android locks a notification channel's settings once it's created. If you change the
   channel in `src/reminder.ts`, uninstall and reinstall the app.
+## Getting the APK
+
+Every push runs the **Build Android APK** GitHub Actions workflow. Open the run on the
+**Actions** tab and download the `move-reminder-apk` artifact.
+
+## Ideas
+
 - Possible ideas: quiet hours / working hours only, custom alarm sound, your own voice
   recordings, daily stats, a home-screen widget.

@@ -128,9 +128,10 @@ export function alertLoudly(text: string) {
   Speech.speak(text, { volume: 1.0, rate: 0.95, pitch: 1.05, language: 'en-US' });
 }
 
-export function praise() {
+/** Speak a short message (praise, level up…) at full volume. */
+export function say(text: string) {
   Speech.stop();
-  Speech.speak('Nice! You moved. Timer reset.', { volume: 1.0 });
+  Speech.speak(text, { volume: 1.0 });
 }
 
 export function stopAlert() {
