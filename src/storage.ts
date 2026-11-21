@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { DEFAULT_SCHEDULE, WorkSchedule } from './schedule';
+
+// Storage key kept from the app's first version so existing progress survives.
 const KEY = 'move-reminder-state-v1';
 
 export type PersistedState = {
@@ -12,6 +15,11 @@ export type PersistedState = {
   snoozeUntil: number;
   /** Last notification button press handled, so it is never counted twice. */
   lastHandledResponse: string | null;
+  schedule: WorkSchedule;
+  /** The challenge card dealt for the current sitting session. */
+  cardId: string | null;
+  voiceId: string;
+  hatId: string;
 };
 
 export const DEFAULT_STATE: PersistedState = {
@@ -21,18 +29,18 @@ export const DEFAULT_STATE: PersistedState = {
   autoDetectSteps: true,
   snoozeUntil: 0,
   lastHandledResponse: null,
+  schedule: DEFAULT_SCHEDULE,
+  cardId: null,
+  voiceId: 'coach',
+  hatId: 'none',
 };
-
-/** When the next alert is due: the end of the sitting interval, or the end of a snooze. */
-export function nextDueAt(s: PersistedState) {
-  return Math.max(s.lastMovedAt + s.intervalMin * 60_000, s.snoozeUntil);
-}
 
 export async function loadState(): Promise<PersistedState> {
   try {
     const raw = await AsyncStorage.getItem(KEY);
     if (!raw) return DEFAULT_STATE;
-    return { ...DEFAULT_STATE, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_STATE, ...parsed, schedule: { ...DEFAULT_SCHEDULE, ...parsed.schedule } };
   } catch {
     return DEFAULT_STATE;
   }

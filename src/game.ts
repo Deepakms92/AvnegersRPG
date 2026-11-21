@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { CARDS, ChallengeCard, RARITY } from './cards';
+import { DEFAULT_SCHEDULE, isWorkday, WorkSchedule } from './schedule';
+
 const KEY = 'move-reminder-game-v1';
 
 /** Moves needed in a day to count toward the streak. */
@@ -21,6 +24,8 @@ export type GameStats = {
   badges: string[];
   walkMoves: number;
   quickMoves: number;
+  /** Challenge cards completed: card id → times completed. */
+  cards: Record<string, number>;
 };
 
 export const DEFAULT_STATS: GameStats = {
@@ -34,6 +39,7 @@ export const DEFAULT_STATS: GameStats = {
   badges: [],
   walkMoves: 0,
   quickMoves: 0,
+  cards: {},
 };
 
 export type Badge = {
@@ -53,6 +59,14 @@ export const BADGES: Badge[] = [
   { id: 'moves25', icon: '🏅', name: 'Mover', hint: '25 moves total', earned: (s) => s.totalMoves >= 25 },
   { id: 'level5', icon: '👑', name: 'Royalty', hint: 'Reach level 5', earned: (s) => levelInfo(s.xp).level >= 5 },
   { id: 'streak7', icon: '🌋', name: 'Unstoppable', hint: '7-day streak', earned: (s) => s.streak >= 7 },
+  { id: 'collector', icon: '📚', name: 'Collector', hint: 'Collect 10 different cards', earned: (s) => Object.keys(s.cards).length >= 10 },
+  {
+    id: 'legend',
+    icon: '🌟',
+    name: 'Legendary',
+    hint: 'Complete a Legendary card',
+    earned: (s) => CARDS.some((c) => c.rarity === 'legendary' && (s.cards[c.id] ?? 0) > 0),
+  },
 ];
 
 const TITLES = [
@@ -89,16 +103,29 @@ export function dayKeyOf(t: number) {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-function yesterdayKey(t: number) {
-  return dayKeyOf(t - 24 * 60 * 60_000);
+/**
+ * Whether a scheduled work day was missed between the last day the goal was hit
+ * and today. Days off (outside work hours) don't count, so weekends don't break
+ * your streak.
+ */
+function missedWorkday(lastGoalDay: string, now: number, schedule: WorkSchedule) {
+  const [y, m, d] = lastGoalDay.split('-').map(Number);
+  const today = dayKeyOf(now);
+  const day = new Date(y, m - 1, d + 1, 12);
+  for (let i = 0; i < 400; i++) {
+    if (dayKeyOf(day.getTime()) === today) return false;
+    if (isWorkday(day.getTime(), schedule)) return true;
+    day.setDate(day.getDate() + 1);
+  }
+  return true;
 }
 
 /** Roll the day over and expire a broken streak. */
-export function normalize(s: GameStats, now = Date.now()): GameStats {
+export function normalize(s: GameStats, now = Date.now(), schedule = DEFAULT_SCHEDULE): GameStats {
   const today = dayKeyOf(now);
   let next = s;
   if (s.dayKey !== today) next = { ...next, dayKey: today, movesToday: 0 };
-  if (next.lastGoalDay && next.lastGoalDay !== today && next.lastGoalDay !== yesterdayKey(now)) {
+  if (next.lastGoalDay && next.lastGoalDay !== today && missedWorkday(next.lastGoalDay, now, schedule)) {
     next = { ...next, streak: 0 };
   }
   return next;
@@ -110,6 +137,10 @@ export type MoveResult = {
   reasons: string[];
   leveledUp: boolean;
   newBadges: Badge[];
+  /** The challenge card completed by this move, if any. */
+  card: ChallengeCard | null;
+  /** True the first time this card is completed. */
+  newCard: boolean;
 };
 
 /**
@@ -118,9 +149,17 @@ export type MoveResult = {
  */
 export function recordMove(
   prev: GameStats,
-  opts: { now: number; overdueByMs: number; viaSteps: boolean },
+  opts: {
+    now: number;
+    overdueByMs: number;
+    viaSteps: boolean;
+    /** The card dealt for this session; completed if you move after the alert. */
+    card?: ChallengeCard | null;
+    schedule?: WorkSchedule;
+  },
 ): MoveResult {
-  const s = normalize(prev, opts.now);
+  const schedule = opts.schedule ?? DEFAULT_SCHEDULE;
+  const s = normalize(prev, opts.now, schedule);
   const reasons: string[] = [];
   let xp = 0;
 
@@ -143,10 +182,18 @@ export function recordMove(
     }
   }
 
+  // The challenge card counts once the alert has gone off (honour system).
+  const card = opts.card && opts.overdueByMs >= 0 ? opts.card : null;
+  const newCard = !!card && !(s.cards[card.id] > 0);
+  if (card && RARITY[card.rarity].xp > 0) {
+    xp += RARITY[card.rarity].xp;
+    reasons.push(`${RARITY[card.rarity].label} card +${RARITY[card.rarity].xp}`);
+  }
+
   const movesToday = s.movesToday + 1;
   let { streak, lastGoalDay } = s;
   if (movesToday === DAILY_GOAL && lastGoalDay !== s.dayKey) {
-    streak = lastGoalDay === yesterdayKey(opts.now) ? streak + 1 : 1;
+    streak = lastGoalDay && !missedWorkday(lastGoalDay, opts.now, schedule) ? streak + 1 : 1;
     lastGoalDay = s.dayKey;
     xp += 50;
     reasons.push('Daily goal +50');
@@ -162,6 +209,7 @@ export function recordMove(
     lastXpAt: onCooldown ? s.lastXpAt : opts.now,
     walkMoves: s.walkMoves + (opts.viaSteps ? 1 : 0),
     quickMoves: s.quickMoves + (quick ? 1 : 0),
+    cards: card ? { ...s.cards, [card.id]: (s.cards[card.id] ?? 0) + 1 } : s.cards,
   };
 
   const newBadges = BADGES.filter((b) => !next.badges.includes(b.id) && b.earned(next));
@@ -173,14 +221,16 @@ export function recordMove(
     reasons,
     leveledUp: levelInfo(next.xp).level > levelInfo(s.xp).level,
     newBadges,
+    card,
+    newCard,
   };
 }
 
-export async function loadStats(): Promise<GameStats> {
+export async function loadStats(schedule = DEFAULT_SCHEDULE): Promise<GameStats> {
   try {
     const raw = await AsyncStorage.getItem(KEY);
     const parsed = raw ? { ...DEFAULT_STATS, ...JSON.parse(raw) } : DEFAULT_STATS;
-    return normalize(parsed);
+    return normalize(parsed, Date.now(), schedule);
   } catch {
     return DEFAULT_STATS;
   }

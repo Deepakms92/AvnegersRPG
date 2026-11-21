@@ -4,6 +4,11 @@ import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync } from 'expo-audio';
 import { Platform, Vibration } from 'react-native';
 
+import { cardById, RARITY } from './cards';
+import { planReminders } from './schedule';
+import type { PersistedState } from './storage';
+import { Voice, voiceById } from './voices';
+
 export const CHANNEL_ID = 'move-reminder-loud';
 const CHANNEL_ID_FALLBACK = 'move-reminder';
 const INFO_CHANNEL_ID = 'move-reminder-info';
@@ -13,22 +18,9 @@ export const ACTION_MOVED = 'moved';
 export const ACTION_SNOOZE = 'snooze';
 export const SNOOZE_MIN = 5;
 
-/**
- * Follow-up nags (minutes after the first alert) if you ignore the reminder:
- * quickly at first, then every 10 minutes for 3 hours, until you move.
- */
-const NAG_OFFSETS_MIN = [2, 5, 10, 15, 20, ...Array.from({ length: 16 }, (_, i) => 30 + i * 10)];
-
-const PHRASES = [
-  "Hey! You've been sitting for a long time. Time to stand up and move a bit!",
-  'Up you get! Stretch your legs and walk around for a couple of minutes.',
-  'Still sitting? Your body is asking for a break. Stand up and move!',
-  'Movement break! Get up, roll your shoulders, and take a short walk.',
-];
-
-export function pickPhrase(minutes: number): string {
-  const base = PHRASES[Math.floor(Math.random() * PHRASES.length)];
-  return `You have been sitting for ${minutes} minute${minutes === 1 ? '' : 's'}. ${base}`;
+/** What the chosen voice says when it's time to move (with the dealt card, if any). */
+export function reminderLine(state: PersistedState, minutes: number) {
+  return voiceById(state.voiceId).remind(Math.max(1, minutes), cardById(state.cardId));
 }
 
 /** Show alerts, play sound and vibrate even while the app is in the foreground. */
@@ -131,28 +123,29 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 /**
- * Schedules the main reminder plus follow-up nags. These fire even if the app
- * is in the background or killed, and keep coming until you move or snooze.
+ * Schedules all upcoming reminders for this state: the current sitting session
+ * with follow-up nags, plus the first reminders of the next work days. They fire
+ * even if the app is in the background or killed, until you move or snooze.
  */
-export async function scheduleReminders(dueAt: number, lastMovedAt: number) {
+export async function scheduleForState(state: PersistedState) {
   await Notifications.cancelAllScheduledNotificationsAsync();
-  const times = [0, ...NAG_OFFSETS_MIN].map((offset) => dueAt + offset * 60_000);
-  for (const [i, when] of times.entries()) {
-    if (when <= Date.now()) continue;
-    const sittingMin = Math.max(1, Math.round((when - lastMovedAt) / 60_000));
+  const voice = voiceById(state.voiceId);
+  const card = cardById(state.cardId);
+  const cardTitle = card ? ` ${RARITY[card.rarity].icon} ${card.title}` : '';
+  for (const r of planReminders(state, Date.now())) {
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: i === 0 ? '🧟 Energy at 0%, time to move!' : `⚠️ Still sitting: ${sittingMin} min`,
-        body: pickPhrase(sittingMin),
+        title: r.first ? `🧟 Energy at 0%!${cardTitle}` : `⚠️ Still sitting: ${r.sittingMin} min`,
+        body: r.first ? voice.remind(r.sittingMin, card) : `${voice.nag(r.sittingMin)}${card ? ` ${card.text}` : ''}`,
         sound: 'default',
         vibrate: [0, 800, 400, 800],
         priority: Notifications.AndroidNotificationPriority.MAX,
         categoryIdentifier: CATEGORY_ID,
-        data: { kind: 'move-reminder', sittingMin },
+        data: { kind: 'move-reminder', sittingMin: r.sittingMin },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: when,
+        date: r.when,
         channelId: activeChannelId,
       },
     });
@@ -188,18 +181,18 @@ export async function configureAudio() {
   }
 }
 
-/** Speak the reminder out loud at full volume and buzz the phone. */
-export function alertLoudly(text: string) {
+/** Speak the reminder out loud at full volume, in the chosen voice, and buzz the phone. */
+export function alertLoudly(text: string, voice: Voice) {
   Speech.stop();
   Vibration.vibrate([0, 800, 400, 800, 400, 800]);
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-  Speech.speak(text, { volume: 1.0, rate: 0.95, pitch: 1.05, language: 'en-US' });
+  say(text, voice);
 }
 
-/** Speak a short message (praise, level up…) at full volume. */
-export function say(text: string) {
+/** Speak a short message (praise, level up…) at full volume in the chosen voice. */
+export function say(text: string, voice: Voice) {
   Speech.stop();
-  Speech.speak(text, { volume: 1.0 });
+  Speech.speak(text, { volume: 1.0, rate: voice.rate, pitch: voice.pitch, language: 'en-US' });
 }
 
 export function stopAlert() {

@@ -20,16 +20,17 @@ Sitting for hours is easy to do and hard to notice. WellPing notices for you.
 Set how long you want to sit (15, 30, 45, 60 or 90 minutes). When time's up, WellPing tells you OUT LOUD to get up and move, and keeps nudging you until you do.
 
 TURN MOVING INTO A GAME
-• Energy bar: your energy drains while you sit. Hit 0% and you go into Zombie Mode!
-• XP and levels: every move earns XP. Rise from Couch Potato to Legend of Motion.
-• Bonus XP for responding quickly, moving early, or walking it off.
-• Daily quest: make 5 moves a day to keep your streak alive.
-• 8 badges to unlock, from First Step to Unstoppable.
+• Meet Pip, your buddy. Pip gets stiff while you sit, turns into a zombie if you sit too long, and evolves as you level up.
+• Challenge cards: every reminder deals a card, from "Shoulder Rolls" to the Legendary "Stairway Hero". Collect all 25!
+• Voice personalities: be nagged by a Drill Sergeant, Grandma, a Sarcastic Robot, a Pirate and more.
+• XP and levels: rise from Couch Potato to Legend of Motion.
+• Daily quest and streaks, 10 badges and hats for Pip.
 
 REMINDERS THAT ACTUALLY WORK
 • Spoken alerts when the app is open, so you can't miss them.
 • Reminders keep coming even when the app is closed, until you move.
 • Tap "I moved!" or "Snooze 5 min" right from the notification.
+• Work hours: reminders only when you want them. Weekends off don't break your streak.
 • Walk around and WellPing notices: about 30 steps resets your timer automatically.
 
 PRIVATE BY DESIGN

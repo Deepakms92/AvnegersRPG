@@ -120,8 +120,8 @@ export function ThinBar({ value, color }: { value: number; color: string }) {
   );
 }
 
-/** Bobbing avatar; shakes when in alarm mode. */
-export function Avatar({ emoji, alarm }: { emoji: string; alarm: boolean }) {
+/** Bobbing avatar ring; shakes when in alarm mode. */
+export function Avatar({ children, alarm }: { children: React.ReactNode; alarm: boolean }) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     anim.setValue(0);
@@ -151,7 +151,7 @@ export function Avatar({ emoji, alarm }: { emoji: string; alarm: boolean }) {
 
   return (
     <View style={styles.avatarRing}>
-      <Animated.Text style={[styles.avatar, { transform }]}>{emoji}</Animated.Text>
+      <Animated.View style={{ transform }}>{children}</Animated.View>
     </View>
   );
 }
@@ -220,6 +220,38 @@ export function RewardToast({ toast }: { toast: Toast | null }) {
   );
 }
 
+/** A card with a tappable header that expands and collapses its content. */
+export function Section({
+  title,
+  meta,
+  children,
+  initiallyOpen = false,
+}: {
+  title: string;
+  meta?: string;
+  children: React.ReactNode;
+  initiallyOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(initiallyOpen);
+  return (
+    <Card>
+      <Pressable
+        onPress={() => setOpen((v) => !v)}
+        style={styles.sectionHead}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+      >
+        <Text style={styles.sectionTitle}>{title}</Text>
+        <Text style={styles.sectionMeta}>
+          {meta ? `${meta}  ` : ''}
+          {open ? '▲' : '▼'}
+        </Text>
+      </Pressable>
+      {open && <View style={{ marginTop: 14 }}>{children}</View>}
+    </Card>
+  );
+}
+
 export function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
@@ -252,7 +284,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatar: { fontSize: 76, lineHeight: 96 },
   toast: {
     position: 'absolute',
     top: 110,
@@ -268,6 +299,9 @@ const styles = StyleSheet.create({
   },
   toastTitle: { fontFamily: F.bold, fontSize: 28 },
   toastLine: { fontFamily: F.medium, fontSize: 14, color: C.muted, marginTop: 2 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  sectionTitle: { fontFamily: F.bold, color: C.text, fontSize: 17 },
+  sectionMeta: { fontFamily: F.semibold, color: C.muted, fontSize: 14 },
   card: {
     backgroundColor: C.card,
     borderColor: C.cardBorder,
