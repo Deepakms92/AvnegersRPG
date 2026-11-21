@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { Platform, Vibration } from 'react-native';
 
 export const CHANNEL_ID = 'move-reminder-loud';
+const CHANNEL_ID_FALLBACK = 'move-reminder';
 
 /** Follow-up nags (minutes after the first alert) if you ignore the reminder. */
 const NAG_OFFSETS_MIN = [2, 5, 10, 20];
@@ -32,30 +33,51 @@ export function configureNotificationHandler() {
   });
 }
 
+/** Channel used when scheduling; falls back if the loud one can't be created. */
+let activeChannelId: string | undefined = CHANNEL_ID;
+
+const BASE_CHANNEL = {
+  name: 'Move reminders (loud)',
+  description: 'Loud alerts telling you to get up and move',
+  importance: Notifications.AndroidImportance.MAX,
+  vibrationPattern: [0, 800, 400, 800, 400, 800],
+  enableVibrate: true,
+  lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+};
+
 /**
- * A max-importance channel that routes its sound through the ALARM audio stream,
- * so it's loud and still plays when the media volume is low. Android channel
- * settings are fixed once created; to change them, uninstall the app or use a new channel id.
+ * Tries, in order:
+ *  1. A max-importance channel that plays its sound on the ALARM audio stream
+ *     (loud even when media volume is low). Works in development builds.
+ *  2. A plain max-importance channel (Expo Go rejects some options from step 1).
+ *  3. Expo's default channel.
+ * Android locks channel settings once created; uninstall the app to change them.
  */
 export async function setupAndroidChannel() {
   if (Platform.OS !== 'android') return;
-  await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-    name: 'Move reminders (loud)',
-    description: 'Loud alerts telling you to get up and move',
-    importance: Notifications.AndroidImportance.MAX,
-    sound: 'default',
-    vibrationPattern: [0, 800, 400, 800, 400, 800],
-    enableVibrate: true,
-    enableLights: true,
-    lightColor: '#FF5722',
-    bypassDnd: true,
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    audioAttributes: {
-      usage: Notifications.AndroidAudioUsage.ALARM,
-      contentType: Notifications.AndroidAudioContentType.SONIFICATION,
-      flags: { enforceAudibility: true, requestHardwareAudioVideoSynchronization: false },
-    },
-  });
+  try {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      ...BASE_CHANNEL,
+      sound: 'default',
+      bypassDnd: true,
+      audioAttributes: {
+        usage: Notifications.AndroidAudioUsage.ALARM,
+        contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+        flags: { enforceAudibility: true, requestHardwareAudioVideoSynchronization: false },
+      },
+    });
+    activeChannelId = CHANNEL_ID;
+    return;
+  } catch (e) {
+    console.warn('[move-reminder] Loud channel unavailable, using a simpler one.', e);
+  }
+  try {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID_FALLBACK, BASE_CHANNEL);
+    activeChannelId = CHANNEL_ID_FALLBACK;
+  } catch (e) {
+    console.warn('[move-reminder] Could not create a channel, using the default one.', e);
+    activeChannelId = undefined;
+  }
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
@@ -87,7 +109,7 @@ export async function scheduleReminders(dueAt: number, intervalMin: number) {
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: when,
-        channelId: CHANNEL_ID,
+        channelId: activeChannelId,
       },
     });
   }

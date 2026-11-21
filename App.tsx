@@ -65,12 +65,17 @@ export default function App() {
   // Load persisted state and re-arm the schedule on launch.
   useEffect(() => {
     (async () => {
-      await setupAndroidChannel();
+      // Load state first so the UI never gets stuck if notification setup fails.
       const s = await loadState();
       setState(s);
       setLoaded(true);
-      if (s.enabled) {
-        await scheduleReminders(s.lastMovedAt + s.intervalMin * 60_000, s.intervalMin);
+      try {
+        await setupAndroidChannel();
+        if (s.enabled) {
+          await scheduleReminders(s.lastMovedAt + s.intervalMin * 60_000, s.intervalMin);
+        }
+      } catch (e) {
+        console.warn('[move-reminder] Could not schedule reminders on launch.', e);
       }
     })();
   }, []);
@@ -163,13 +168,17 @@ export default function App() {
 
   const toggleEnabled = async (value: boolean) => {
     if (value) {
-      const ok = await requestNotificationPermission();
-      setPermissionDenied(!ok);
-      await setupAndroidChannel();
       const t = Date.now();
       update({ enabled: true, lastMovedAt: t });
       setNow(t);
-      await scheduleReminders(t + state.intervalMin * 60_000, state.intervalMin);
+      try {
+        const ok = await requestNotificationPermission();
+        setPermissionDenied(!ok);
+        await setupAndroidChannel();
+        await scheduleReminders(t + state.intervalMin * 60_000, state.intervalMin);
+      } catch (e) {
+        console.warn('[move-reminder] Could not schedule reminders.', e);
+      }
     } else {
       stopAlert();
       update({ enabled: false });
