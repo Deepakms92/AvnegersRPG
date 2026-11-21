@@ -26,6 +26,9 @@ you've been sitting too long and need to get up and move.
 - **Daily quest and streak.** Make 5 moves a day for +50 XP and to keep your 🔥 streak alive.
 - **Badges.** 10 unlockable badges (First Step, Lightning, Collector, Legendary…).
 - Level-ups, unlocks, badges and cards get a pop-up and a spoken announcement.
+- **Your stats.** Days active, moves per day (14-day chart with the daily goal), how many
+  alerts you answered within 5 minutes, average response time, snoozes and longest sit.
+  **Share my report** sends a text summary, handy for testers. All stats stay on the phone.
 
 ### The reminder
 - **Loud spoken alert.** When energy runs out and the app is open, it speaks the reminder at
@@ -92,6 +95,7 @@ Or tap **Test the loud alert** in Game settings.
 | `src/schedule.ts` | Work hours, the sitting timer and which reminders to schedule |
 | `src/cards.ts`, `src/cardsUI.tsx` | Challenge cards, rarities and the collection grid |
 | `src/voices.ts` | Voice personalities and their lines |
+| `src/statsUI.tsx` | Stats screen: 14-day chart, response rate, shareable report |
 | `src/buddyData.ts`, `src/buddy.tsx` | Pip's evolution stages, hats and vector drawing |
 | `src/ui.tsx` | Game-style UI pieces: 3D buttons, energy bar, avatar, reward pop-up |
 | `src/reminder.ts` | Notification channel, scheduling, text-to-speech and vibration |

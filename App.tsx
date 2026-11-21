@@ -31,6 +31,7 @@ import { CardCollection, CardTeaser, ChallengeCardView } from './src/cardsUI';
 import { Buddy } from './src/buddy';
 import { BuddyMood, HATS, hatUnlocked, stageFor } from './src/buddyData';
 import { VOICES, voiceById } from './src/voices';
+import { StatsPanel } from './src/statsUI';
 import { DAY_LETTERS, formatClock, formatWhen, isWorkday, timerView, WorkSchedule } from './src/schedule';
 import {
   Avatar,
@@ -480,6 +481,10 @@ export default function App() {
           <Stat icon="⭐" value={`${stats.xp}`} label="Total XP" />
           <Stat icon="🎴" value={`${cardsOwned}/${CARDS.length}`} label="Cards" />
         </View>
+
+        <Section title="📊 Your stats" meta="14 days">
+          <StatsPanel stats={stats} />
+        </Section>
 
         <Section title="🎴 Card collection" meta={`${cardsOwned}/${CARDS.length}`}>
           <CardCollection owned={stats.cards} />

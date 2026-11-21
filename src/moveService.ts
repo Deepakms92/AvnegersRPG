@@ -2,7 +2,7 @@ import * as Notifications from 'expo-notifications';
 
 import { HATS, stageFor } from './buddyData';
 import { cardById, drawCard, RARITY } from './cards';
-import { levelInfo, loadStats, MoveResult, recordMove, saveStats } from './game';
+import { levelInfo, loadStats, MoveResult, recordMove, recordSnooze, saveStats } from './game';
 import {
   ACTION_MOVED,
   ACTION_SNOOZE,
@@ -48,6 +48,7 @@ export async function applyMove(opts: { viaSteps: boolean; now?: number }): Prom
       viaSteps: opts.viaSteps,
       card: tv.offDuty ? null : cardById(state.cardId),
       schedule: state.schedule,
+      sittingMin: (t - tv.base) / 60_000,
     });
     await saveStats(result.stats);
   }
@@ -64,6 +65,7 @@ export async function applySnooze(now = Date.now()) {
   const state = await loadState();
   const next: PersistedState = { ...state, snoozeUntil: now + SNOOZE_MIN * 60_000 };
   await saveState(next);
+  await saveStats(recordSnooze(await loadStats(state.schedule), now));
   await reschedule(next);
   return next;
 }

@@ -12,6 +12,36 @@ const XP_COOLDOWN_MS = 5 * 60_000;
 /** Responding within this window after the alert earns the "on time" bonus. */
 const QUICK_RESPONSE_MS = 5 * 60_000;
 
+/** One day's activity, kept on the device for the stats screen (last 60 days). */
+export type DayLog = {
+  moves: number;
+  /** Moves made after an alert went off. */
+  answered: number;
+  /** Of those, answered within 5 minutes. */
+  quick: number;
+  /** Moves made before the alert. */
+  early: number;
+  snoozes: number;
+  cards: number;
+  /** Sum of minutes between an alert and the move, for the average response time. */
+  responseMinSum: number;
+  /** Longest sitting stretch that day, in minutes. */
+  maxSitMin: number;
+};
+
+export const EMPTY_DAY: DayLog = {
+  moves: 0,
+  answered: 0,
+  quick: 0,
+  early: 0,
+  snoozes: 0,
+  cards: 0,
+  responseMinSum: 0,
+  maxSitMin: 0,
+};
+
+const HISTORY_DAYS = 60;
+
 export type GameStats = {
   xp: number;
   totalMoves: number;
@@ -26,6 +56,10 @@ export type GameStats = {
   quickMoves: number;
   /** Challenge cards completed: card id → times completed. */
   cards: Record<string, number>;
+  /** Daily activity log, keyed by dayKey. */
+  history: Record<string, DayLog>;
+  /** dayKey of the first day WellPing was used. */
+  firstDay: string | null;
 };
 
 export const DEFAULT_STATS: GameStats = {
@@ -40,6 +74,8 @@ export const DEFAULT_STATS: GameStats = {
   walkMoves: 0,
   quickMoves: 0,
   cards: {},
+  history: {},
+  firstDay: null,
 };
 
 export type Badge = {
@@ -156,6 +192,8 @@ export function recordMove(
     /** The card dealt for this session; completed if you move after the alert. */
     card?: ChallengeCard | null;
     schedule?: WorkSchedule;
+    /** How long you'd been sitting, for the stats screen. */
+    sittingMin?: number;
   },
 ): MoveResult {
   const schedule = opts.schedule ?? DEFAULT_SCHEDULE;
@@ -210,6 +248,17 @@ export function recordMove(
     walkMoves: s.walkMoves + (opts.viaSteps ? 1 : 0),
     quickMoves: s.quickMoves + (quick ? 1 : 0),
     cards: card ? { ...s.cards, [card.id]: (s.cards[card.id] ?? 0) + 1 } : s.cards,
+    history: logDay(s, opts.now, (d) => ({
+      ...d,
+      moves: d.moves + 1,
+      answered: d.answered + (opts.overdueByMs >= 0 ? 1 : 0),
+      quick: d.quick + (quick ? 1 : 0),
+      early: d.early + (opts.overdueByMs < 0 ? 1 : 0),
+      cards: d.cards + (card ? 1 : 0),
+      responseMinSum: d.responseMinSum + (opts.overdueByMs >= 0 ? opts.overdueByMs / 60_000 : 0),
+      maxSitMin: Math.max(d.maxSitMin, Math.round(opts.sittingMin ?? 0)),
+    })),
+    firstDay: s.firstDay ?? s.dayKey,
   };
 
   const newBadges = BADGES.filter((b) => !next.badges.includes(b.id) && b.earned(next));
@@ -223,6 +272,29 @@ export function recordMove(
     newBadges,
     card,
     newCard,
+  };
+}
+
+/** Updates today's log entry and drops entries older than 60 days. */
+function logDay(s: GameStats, now: number, fn: (d: DayLog) => DayLog): Record<string, DayLog> {
+  const key = dayKeyOf(now);
+  const history = { ...s.history, [key]: fn({ ...EMPTY_DAY, ...s.history[key] }) };
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - HISTORY_DAYS);
+  for (const k of Object.keys(history)) {
+    const [y, m, d] = k.split('-').map(Number);
+    if (new Date(y, m - 1, d) < cutoff) delete history[k];
+  }
+  return history;
+}
+
+/** Counts a snooze in today's log. */
+export function recordSnooze(prev: GameStats, now: number): GameStats {
+  const s = normalize(prev, now);
+  return {
+    ...s,
+    history: logDay(s, now, (d) => ({ ...d, snoozes: d.snoozes + 1 })),
+    firstDay: s.firstDay ?? s.dayKey,
   };
 }
 
