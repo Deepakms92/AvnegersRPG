@@ -28,10 +28,25 @@
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.RECEIVE_BOOT_COMPLETED"
       ],
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "allowBackup": true
     },
     "plugins": [
-      ["expo-notifications", { "color": "#FF7043" }]
+      [
+        "expo-notifications",
+        {
+          "color": "#FF7043"
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"

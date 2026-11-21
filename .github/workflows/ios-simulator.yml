@@ -1,0 +1,52 @@
+name: Build iOS Simulator app
+
+# Builds an unsigned iOS app for the iPhone Simulator on a Mac. It confirms the
+# iOS side compiles, and the result can be run in Xcode's Simulator. (Installing
+# on a real iPhone needs Apple signing: use EAS or Xcode for that.)
+# Manual only: macOS build minutes count 10x against private-repo quotas.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Generate native iOS project (runs pod install)
+        run: npx expo prebuild --platform ios
+
+      - name: Build for the iOS Simulator
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace MoveReminder.xcworkspace \
+            -scheme MoveReminder \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tail -50
+
+      - name: Package the app
+        run: |
+          cd ios/build/Build/Products/Release-iphonesimulator
+          ditto -c -k --sequesterRsrc --keepParent MoveReminder.app "$GITHUB_WORKSPACE/MoveReminder-simulator.zip"
+
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v5
+        with:
+          name: move-reminder-ios-simulator
+          path: MoveReminder-simulator.zip
+          if-no-files-found: error

@@ -1,7 +1,7 @@
 # Move Reminder (POC)
 
-A small React Native (Expo) Android app that **tells you out loud** when you've been
-sitting too long and need to get up and move.
+A small React Native (Expo) app for **iOS and Android** that **tells you out loud** when
+you've been sitting too long and need to get up and move.
 
 ![Normal and overdue states](docs/preview.png)
 
@@ -23,21 +23,33 @@ sitting too long and need to get up and move.
   full volume using text-to-speech, vibrates hard and repeats every minute until you move.
 - **Background alerts that don't give up.** A reminder plus follow-up nags (+2, +5, +10, +15,
   +20 min, then every 10 min for 3 hours) are scheduled as local notifications. They fire even
-  if the app is in the background or closed. In the installable APK they play on the Android
-  **alarm** audio stream, so they're loud even when media volume is low.
+  if the app is in the background or closed.
 - **Buttons on the notification.** **✅ I moved!** records the move, gives XP and restarts the
-  timer without opening the app. **⏰ Snooze 5 min** pauses the alerts briefly (no XP). In the
-  APK these work even when the app is closed. Expo Go can't run them in the background.
+  timer. **⏰ Snooze 5 min** pauses the alerts briefly (no XP).
 - **Auto-reset on walking.** With the step counter enabled, about 30 steps counts as a move.
-- Settings, timer and game progress are saved on the device.
+- Settings, timer and game progress are saved on the device. On Android they're also included
+  in the phone's automatic Google backup, so a reinstall usually restores them.
+
+## iOS vs Android
+
+The same code runs on both. Where a platform can't do something, the app falls back:
+
+| Feature | Android | iOS |
+| --- | --- | --- |
+| Reminder sound | Alarm audio stream: loud even with media volume low (APK only, not Expo Go) | Normal notification sound; the silent switch mutes it (louder needs Apple's Critical Alerts approval) |
+| Spoken alert (app open) | ✅ | ✅ Plays even with the silent switch on |
+| Notification buttons | Work in the background, without opening the app (APK only) | Open the app, which records the tap |
+| Walking detection | While the app is open | While the app is open, **plus** steps walked while it was closed (100+ steps since your last move count as a move when you return) |
+| Progress survives a reinstall | Usually, via Google's automatic app backup | Only when restoring a whole iPhone backup |
 
 ## Run it
 
-Requires Node 20+ and an Android phone, or an emulator.
+Requires Node 20+ and a phone (Android or iPhone), an Android emulator or the iOS Simulator.
 
 ```bash
 npm install
-npx expo start        # then press "a", or scan the QR code with Expo Go
+npx expo start        # press "a" (Android emulator) or "i" (iOS Simulator),
+                      # or scan the QR code with Expo Go on a phone
 ```
 
 **Expo Go** is enough to try the timer, the spoken alert and local notifications. To get
@@ -46,9 +58,14 @@ development build:
 
 ```bash
 npx expo run:android                                 # local build (needs the Android SDK)
-# or a cloud build of an installable APK:
-npx eas-cli@latest build -p android --profile preview
+npx expo run:ios --device                            # local build on your iPhone (Mac + Xcode)
+# or cloud builds with EAS:
+npx eas-cli@latest build -p android --profile preview   # installable APK
+npx eas-cli@latest build -p ios                         # needs an Apple Developer account
 ```
+
+With a free Apple ID, `run:ios --device` installs on your own iPhone, but the app stops
+opening after 7 days. Sharing with others needs an Apple Developer account and TestFlight.
 
 To test quickly, open **Game settings**, pick **1 min 🧪**, tap **START PLAYING** and wait.
 Or tap **Test the loud alert** in Game settings.
@@ -59,12 +76,12 @@ Or tap **Test the loud alert** in Game settings.
 | --- | --- |
 | `App.tsx` | Main screen, timer loop, foreground alert, step detection |
 | `src/moveService.ts` | Records a move or snooze; shared by the app and the notification buttons |
-| `src/backgroundTask.ts` | Handles notification buttons while the app is closed (Android) |
+| `src/backgroundTask.ts` | Handles notification buttons while the app is closed (Android only) |
 | `src/game.ts` | XP, levels, streaks, badges (saved with AsyncStorage) |
 | `src/ui.tsx` | Game-style UI pieces: 3D buttons, energy bar, avatar, reward pop-up |
 | `src/reminder.ts` | Notification channel, scheduling, text-to-speech and vibration |
 | `src/storage.ts` | Saved settings (AsyncStorage) |
-| `app.json` | Expo config: Android package and permissions |
+| `app.json` | Expo config: app IDs and permissions for iOS and Android |
 | `eas.json` | EAS build profiles (`preview` builds an APK) |
 
 ## Known POC limitations / next steps
@@ -73,16 +90,21 @@ Or tap **Test the loud alert** in Game settings.
   notification sound and vibration, not the spoken sentence. Making it speak in the
   background would need a native foreground service (e.g. Notifee or a custom module)
   that runs text-to-speech when the alarm fires.
-- **Steps are only counted while the app is open.** Background step tracking would need
-  `getStepCountAsync` polling (iOS) or a foreground service (Android).
+- **Live step counting only runs while the app is open.** iOS catches up from step history
+  when you return; Android would need a foreground service.
 - Some Android phone makers (Xiaomi, Samsung, Oppo…) delay or kill scheduled alarms to save
   battery. Excluding the app from battery optimization helps.
 - Android locks a notification channel's settings once it's created. If you change the
   channel in `src/reminder.ts`, uninstall and reinstall the app.
-## Getting the APK
 
-Every push runs the **Build Android APK** GitHub Actions workflow. Open the run on the
-**Actions** tab and download the `move-reminder-apk` artifact.
+## Builds from GitHub Actions
+
+- **Android APK:** every push runs **Build Android APK**. Open the run on the **Actions** tab
+  and download the `move-reminder-apk` artifact.
+- **iOS Simulator app:** run **Build iOS Simulator app** manually from the **Actions** tab
+  (it uses macOS build minutes). Download `move-reminder-ios-simulator`, unzip it, start the
+  iOS Simulator (Xcode → Open Developer Tool → Simulator) and drag `MoveReminder.app` onto it.
+  This doesn't install on a real iPhone; that needs Apple signing (see above).
 
 ## Ideas
 

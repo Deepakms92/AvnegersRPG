@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { AppState, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { Pedometer } from 'expo-sensors';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,12 +15,13 @@ import {
 import {
   alertLoudly,
   cancelReminders,
+  configureAudio,
   configureNotificationHandler,
   pickPhrase,
   requestNotificationPermission,
   say,
   scheduleReminders,
-  setupAndroidChannel,
+  setupNotifications,
   stopAlert,
 } from './src/reminder';
 import { DEFAULT_STATE, loadState, nextDueAt, PersistedState, saveState } from './src/storage';
@@ -49,11 +50,21 @@ import {
 
 configureNotificationHandler();
 
+/** Notification responses don't exist on web (used only for browser previews). */
+const useLastResponse =
+  Platform.OS === 'web' ? () => undefined : Notifications.useLastNotificationResponse;
+
 const INTERVAL_OPTIONS = [1, 15, 30, 45, 60, 90];
 /** While overdue and the app is open, repeat the spoken alert this often. */
 const REPEAT_ALERT_MS = 60_000;
 /** Steps that count as "I moved" and auto-reset the timer. */
 const STEP_THRESHOLD = 30;
+/**
+ * iOS only: steps walked while the app was closed (read from the phone's step
+ * history on return) that count as a move. Higher than the live threshold so
+ * small shuffles around the desk don't count.
+ */
+const CATCH_UP_STEPS = 100;
 
 function formatRemaining(ms: number) {
   const total = Math.max(0, Math.round(ms / 1000));
@@ -119,7 +130,8 @@ export default function App() {
       setStats(g);
       setLoaded(true);
       try {
-        await setupAndroidChannel();
+        await configureAudio();
+        await setupNotifications();
         if (s.enabled) await scheduleReminders(nextDueAt(s), s.lastMovedAt);
       } catch (e) {
         console.warn('[move-reminder] Could not schedule reminders on launch.', e);
@@ -141,14 +153,6 @@ export default function App() {
     setNow(Date.now());
   }, []);
 
-  // Track whether the app is in the foreground.
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (s) => {
-      appActive.current = s === 'active';
-      if (s === 'active') reload();
-    });
-    return () => sub.remove();
-  }, [reload]);
 
   const speakIfDue = useCallback((minutes: number, force = false) => {
     const t = Date.now();
@@ -197,18 +201,21 @@ export default function App() {
     [celebrate],
   );
 
-  // "I moved!" / "Snooze" tapped on a notification while the app is open.
+  // "I moved!" / "Snooze" tapped on a notification. This also catches a tap that
+  // launched the app (always the case on iOS, where the buttons open the app).
+  // On Android a background tap was already handled; the de-duplication skips it.
+  const lastResponse = useLastResponse();
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(async (r) => {
-      const handled = await handleNotificationResponse(r);
+    if (!loaded || !lastResponse) return;
+    (async () => {
+      const handled = await handleNotificationResponse(lastResponse);
       if (!handled) return;
       stopAlert();
       await reload();
       if (handled.kind === 'moved') celebrate(describeMove(handled.result, false));
       else setToast({ id: Date.now(), title: '⏰ Snoozed', lines: ['5 more minutes'], color: C.cyan });
-    });
-    return () => sub.remove();
-  }, [celebrate, reload]);
+    })();
+  }, [loaded, lastResponse, celebrate, reload]);
 
   // Step detection: walking around auto-resets the timer.
   const markMovedRef = useRef(markMoved);
@@ -240,6 +247,39 @@ export default function App() {
     };
   }, [state.enabled, state.autoDetectSteps]);
 
+  /**
+   * iOS can report steps walked while the app was closed. If you walked enough
+   * since your last move, count it as a move when you come back to the app.
+   * (Android has no step history here, so this is iOS only.)
+   */
+  const catchUpSteps = useCallback(async () => {
+    if (Platform.OS !== 'ios') return;
+    const s = await loadState();
+    if (!s.enabled || !s.autoDetectSteps) return;
+    try {
+      if (!(await Pedometer.isAvailableAsync())) return;
+      if (!(await Pedometer.getPermissionsAsync()).granted) return;
+      const { steps } = await Pedometer.getStepCountAsync(new Date(s.lastMovedAt), new Date());
+      if (steps >= CATCH_UP_STEPS) await markMovedRef.current(true);
+    } catch (e) {
+      console.warn('[move-reminder] Could not read step history.', e);
+    }
+  }, []);
+
+  // When the app returns to the foreground: reload saved progress (a notification
+  // button may have changed it), then count steps walked while away (iOS).
+  useEffect(() => {
+    if (!loaded) return;
+    catchUpSteps();
+    const sub = AppState.addEventListener('change', async (s) => {
+      appActive.current = s === 'active';
+      if (s !== 'active') return;
+      await reload();
+      await catchUpSteps();
+    });
+    return () => sub.remove();
+  }, [loaded, reload, catchUpSteps]);
+
   const toggleEnabled = async (value: boolean) => {
     if (value) {
       const t = Date.now();
@@ -248,7 +288,7 @@ export default function App() {
       try {
         const ok = await requestNotificationPermission();
         setPermissionDenied(!ok);
-        await setupAndroidChannel();
+        await setupNotifications();
         await scheduleReminders(t + state.intervalMin * 60_000, t);
       } catch (e) {
         console.warn('[move-reminder] Could not schedule reminders.', e);

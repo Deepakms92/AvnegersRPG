@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
+import { setAudioModeAsync } from 'expo-audio';
 import { Platform, Vibration } from 'react-native';
 
 export const CHANNEL_ID = 'move-reminder-loud';
@@ -62,7 +63,7 @@ const BASE_CHANNEL = {
  *  3. Expo's default channel.
  * Android locks channel settings once created; uninstall the app to change them.
  */
-export async function setupAndroidChannel() {
+export async function setupNotifications() {
   await setupActions();
   if (Platform.OS !== 'android') return;
   try {
@@ -101,15 +102,20 @@ export async function setupAndroidChannel() {
   }
 }
 
-/** "I moved!" and "Snooze" buttons on every reminder notification. */
+/**
+ * "I moved!" and "Snooze" buttons on every reminder notification.
+ * Android handles them in the background (see backgroundTask.ts); iOS can't run
+ * that task, so there the buttons open the app, which then records the tap.
+ */
 async function setupActions() {
+  const openApp = Platform.OS === 'ios';
   try {
     await Notifications.setNotificationCategoryAsync(CATEGORY_ID, [
-      { identifier: ACTION_MOVED, buttonTitle: '✅ I moved!', options: { opensAppToForeground: false } },
+      { identifier: ACTION_MOVED, buttonTitle: '✅ I moved!', options: { opensAppToForeground: openApp } },
       {
         identifier: ACTION_SNOOZE,
         buttonTitle: `⏰ Snooze ${SNOOZE_MIN} min`,
-        options: { opensAppToForeground: false },
+        options: { opensAppToForeground: openApp },
       },
     ]);
   } catch (e) {
@@ -168,6 +174,18 @@ export async function showInfo(title: string, body: string) {
 export async function cancelReminders() {
   await Notifications.cancelAllScheduledNotificationsAsync();
   await Notifications.dismissAllNotificationsAsync();
+}
+
+/**
+ * Lets the spoken alert play even when the iPhone's silent switch is on, and
+ * lowers (ducks) any music while it speaks. Safe to call on both platforms.
+ */
+export async function configureAudio() {
+  try {
+    await setAudioModeAsync({ playsInSilentMode: true, interruptionMode: 'duckOthers' });
+  } catch (e) {
+    console.warn('[move-reminder] Could not configure audio.', e);
+  }
 }
 
 /** Speak the reminder out loud at full volume and buzz the phone. */
