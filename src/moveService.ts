@@ -4,14 +4,16 @@ import { HATS, stageFor } from './buddyData';
 import { cardById, drawCard, RARITY } from './cards';
 import { levelInfo, loadStats, MoveResult, recordMove, recordSnooze, saveStats } from './game';
 import {
+  ACTION_MEETING,
   ACTION_MOVED,
   ACTION_SNOOZE,
   cancelReminders,
+  MEETING_MIN,
   scheduleForState,
   showInfo,
   SNOOZE_MIN,
 } from './reminder';
-import { timerView } from './schedule';
+import { formatWhen, timerView } from './schedule';
 import { loadState, PersistedState, saveState } from './storage';
 import { pickLine, Voice, voiceById, VOICES } from './voices';
 
@@ -53,7 +55,7 @@ export async function applyMove(opts: { viaSteps: boolean; now?: number }): Prom
     await saveStats(result.stats);
   }
 
-  const next: PersistedState = { ...state, lastMovedAt: t, snoozeUntil: 0, cardId: drawCard().id };
+  const next: PersistedState = { ...state, lastMovedAt: t, snoozeUntil: 0, pausedUntil: 0, cardId: drawCard().id };
   await saveState(next);
 
   if (next.enabled) await reschedule(next);
@@ -66,6 +68,19 @@ export async function applySnooze(now = Date.now()) {
   const next: PersistedState = { ...state, snoozeUntil: now + SNOOZE_MIN * 60_000 };
   await saveState(next);
   await saveStats(recordSnooze(await loadStats(state.schedule), now));
+  await reschedule(next);
+  return next;
+}
+
+/**
+ * "In a meeting": no alerts for a while. The sitting clock keeps running, so if
+ * you're overdue when the pause ends, the reminder comes straight away.
+ * Pass 0 minutes to resume.
+ */
+export async function applyPause(minutes: number, now = Date.now()) {
+  const state = await loadState();
+  const next: PersistedState = { ...state, pausedUntil: minutes > 0 ? now + minutes * 60_000 : 0 };
+  await saveState(next);
   await reschedule(next);
   return next;
 }
@@ -161,7 +176,7 @@ function responseKey(r: Notifications.NotificationResponse) {
  */
 export async function handleNotificationResponse(r: Notifications.NotificationResponse) {
   if (r.notification.request.content.data?.kind !== 'move-reminder') return null;
-  if (r.actionIdentifier !== ACTION_MOVED && r.actionIdentifier !== ACTION_SNOOZE) return null;
+  if (![ACTION_MOVED, ACTION_SNOOZE, ACTION_MEETING].includes(r.actionIdentifier)) return null;
 
   // The background task and the in-app listener can both see the same tap: handle it once.
   const key = responseKey(r);
@@ -173,6 +188,12 @@ export async function handleNotificationResponse(r: Notifications.NotificationRe
     await applySnooze();
     await showInfo(`⏰ Snoozed for ${SNOOZE_MIN} min`, "I'll remind you again soon. No XP while snoozing!");
     return { kind: 'snooze' as const };
+  }
+
+  if (r.actionIdentifier === ACTION_MEETING) {
+    const next = await applyPause(MEETING_MIN);
+    await showInfo('🤝 Enjoy your meeting', `Reminders paused until ${formatWhen(next.pausedUntil, Date.now())}.`);
+    return { kind: 'meeting' as const };
   }
 
   const { result } = await applyMove({ viaSteps: false });

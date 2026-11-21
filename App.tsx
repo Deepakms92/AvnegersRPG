@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import * as Haptics from 'expo-haptics';
 import { Pedometer } from 'expo-sensors';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -24,7 +25,15 @@ import {
   stopAlert,
 } from './src/reminder';
 import { DEFAULT_STATE, loadState, PersistedState, saveState } from './src/storage';
-import { applyMove, describeMove, handleNotificationResponse, MoveSummary, reschedule } from './src/moveService';
+import {
+  applyMove,
+  applyPause,
+  describeMove,
+  handleNotificationResponse,
+  MoveSummary,
+  reschedule,
+} from './src/moveService';
+import { Onboarding, OnboardingChoices } from './src/onboarding';
 import { BADGES, DAILY_GOAL, DEFAULT_STATS, GameStats, levelInfo, loadStats } from './src/game';
 import { CARDS, cardById, drawCard, RARITY } from './src/cards';
 import { CardCollection, CardTeaser, ChallengeCardView } from './src/cardsUI';
@@ -66,6 +75,7 @@ const STEP_THRESHOLD = 30;
  */
 const CATCH_UP_STEPS = 100;
 const TIME_STEP_MIN = 30;
+const MEETING_OPTIONS = [30, 60, 90];
 
 function formatRemaining(ms: number) {
   const total = Math.max(0, Math.round(ms / 1000));
@@ -101,13 +111,16 @@ export default function App() {
   const stage = stageFor(lvl.level);
   const cardsOwned = Object.keys(stats.cards).length;
   const dayOff = state.schedule.enabled && !isWorkday(now, state.schedule);
+  const discreet = state.alertStyle === 'discreet';
 
   const buddyMood: BuddyMood =
     !state.enabled || tv.offDuty
       ? 'sleep'
       : tv.overdue
         ? 'zombie'
-        : tv.snoozed || tv.energy <= 0.35
+        : tv.paused
+          ? 'ok'
+          : tv.snoozed || tv.energy <= 0.35
           ? 'tired'
           : tv.energy > 0.6
             ? 'happy'
@@ -116,7 +129,9 @@ export default function App() {
     ? `${stage.name} is napping. Turn reminders on to play`
     : tv.offDuty
       ? `Off duty 😎 Back ${tv.nextStart ? formatWhen(tv.nextStart, now) : 'on your next work day'}`
-      : tv.overdue
+      : tv.paused
+        ? `🤝 In a meeting. Reminders back at ${formatWhen(state.pausedUntil, now)}`
+        : tv.overdue
         ? 'ZOMBIE MODE! Get up and move!'
         : tv.snoozed
           ? 'Snoozed. Move soon!'
@@ -183,7 +198,7 @@ export default function App() {
     if (!force && t - lastSpokenAt.current < REPEAT_ALERT_MS) return;
     lastSpokenAt.current = t;
     const s = stateRef.current;
-    alertLoudly(reminderLine(s, minutes), voiceById(s.voiceId));
+    alertLoudly(reminderLine(s, minutes), voiceById(s.voiceId), s.alertStyle === 'discreet');
   }, []);
 
   // When overdue and the app is open, shout (and repeat every minute).
@@ -204,7 +219,11 @@ export default function App() {
   const celebrate = useCallback((d: MoveSummary) => {
     const color = { level: C.gold, badge: C.pink, card: C.purple, xp: C.lime, plain: C.cyan }[d.kind];
     setToast({ id: Date.now(), title: d.title, lines: d.lines, color });
-    say(d.speech, voiceById(stateRef.current.voiceId));
+    if (stateRef.current.alertStyle === 'discreet') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } else {
+      say(d.speech, voiceById(stateRef.current.voiceId));
+    }
   }, []);
 
   const markMoved = useCallback(
@@ -239,6 +258,8 @@ export default function App() {
       stopAlert();
       await reload();
       if (handled.kind === 'moved') celebrate(describeMove(handled.result, false, voiceById(stateRef.current.voiceId)));
+      else if (handled.kind === 'meeting')
+        setToast({ id: Date.now(), title: '🤝 Meeting mode', lines: ['Reminders paused for 60 min'], color: C.cyan });
       else setToast({ id: Date.now(), title: '⏰ Snoozed', lines: ['5 more minutes'], color: C.cyan });
     })();
   }, [loaded, lastResponse, celebrate, reload]);
@@ -322,6 +343,27 @@ export default function App() {
     await applyPatch({ enabled: true }, { resetTimer: true });
   };
 
+  const pauseFor = async (minutes: number) => {
+    stopAlert();
+    const next = await applyPause(minutes);
+    stateRef.current = next;
+    setState(next);
+    setNow(Date.now());
+    if (minutes > 0) {
+      setToast({ id: Date.now(), title: '🤝 Meeting mode', lines: [`No reminders until ${formatWhen(next.pausedUntil, Date.now())}`], color: C.cyan });
+    }
+  };
+
+  const finishOnboarding = async (c: OnboardingChoices) => {
+    await applyPatch({
+      onboarded: true,
+      intervalMin: c.intervalMin,
+      alertStyle: c.alertStyle,
+      schedule: { ...stateRef.current.schedule, enabled: c.workHours },
+    });
+    if (c.enable) await toggleEnabled(true);
+  };
+
   const updateSchedule = (patch: Partial<WorkSchedule>) =>
     applyPatch({ schedule: { ...stateRef.current.schedule, ...patch } });
 
@@ -353,6 +395,8 @@ export default function App() {
       </LinearGradient>
     );
   }
+
+  if (!state.onboarded) return <Onboarding onDone={finishOnboarding} />;
 
   const sched = state.schedule;
 
@@ -399,7 +443,9 @@ export default function App() {
                 ? tv.nextStart
                   ? formatWhen(tv.nextStart, now)
                   : 'Day off'
-                : tv.snoozed
+                : tv.paused
+                  ? formatRemaining(state.pausedUntil - now)
+                  : tv.snoozed
                   ? formatRemaining(state.snoozeUntil - now)
                   : tv.overdue
                     ? `+${formatRemaining(now - tv.dueAt)}`
@@ -410,14 +456,33 @@ export default function App() {
               ? 'reminders off'
               : tv.offDuty
                 ? 'off duty · reminders start again then'
-                : tv.snoozed
+                : tv.paused
+                  ? `meeting pause · sitting ${tv.sittingMin} min`
+                  : tv.snoozed
                   ? `snoozed · sitting ${tv.sittingMin} min`
                   : tv.overdue
                     ? `overdue · sitting ${tv.sittingMin} min`
                     : `until energy runs out · sitting ${tv.sittingMin} min`}
           </Text>
 
-          {state.enabled && !tv.offDuty && card && (tv.overdue || tv.snoozed ? <ChallengeCardView card={card} /> : <CardTeaser />)}
+          {state.enabled &&
+            !tv.offDuty &&
+            card &&
+            (tv.overdue || tv.snoozed ? (
+              <ChallengeCardView
+                card={card}
+                voice={voice}
+                discreet={discreet}
+                onStart={(seconds) => {
+                  // Quiet the repeating alert while the timer runs.
+                  stopAlert();
+                  lastSpokenAt.current = Date.now() + seconds * 1000;
+                }}
+                onFinish={() => markMoved(false)}
+              />
+            ) : (
+              !tv.paused && <CardTeaser />
+            ))}
         </Card>
 
         {/* Main action */}
@@ -442,6 +507,30 @@ export default function App() {
             textColor="#FFFFFF"
             onPress={() => toggleEnabled(true)}
           />
+        )}
+        {state.enabled && !tv.offDuty && (
+          <View style={styles.meetingRow}>
+            {tv.paused ? (
+              <Pressable onPress={() => pauseFor(0)} style={[styles.chip, styles.chipOn]} accessibilityRole="button">
+                <Text style={[styles.chipText, styles.chipTextOn]}>▶ Resume reminders</Text>
+              </Pressable>
+            ) : (
+              <>
+                <Text style={styles.meetingLabel}>🤝 In a meeting?</Text>
+                {MEETING_OPTIONS.map((m) => (
+                  <Pressable
+                    key={m}
+                    onPress={() => pauseFor(m)}
+                    style={styles.chip}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Pause reminders for ${m} minutes`}
+                  >
+                    <Text style={styles.chipText}>{m}m</Text>
+                  </Pressable>
+                ))}
+              </>
+            )}
+          </View>
         )}
         {permissionDenied && (
           <Text style={styles.warning}>
@@ -575,6 +664,25 @@ export default function App() {
             </View>
 
             <View style={{ gap: 8 }}>
+              <Text style={styles.settingLabel}>Alert style</Text>
+              <View style={styles.chips}>
+                {(
+                  [
+                    ['loud', '🔊 Out loud'],
+                    ['discreet', '🤫 Discreet (vibrate only)'],
+                  ] as const
+                ).map(([style, label]) => {
+                  const on = state.alertStyle === style;
+                  return (
+                    <Pressable key={style} onPress={() => applyPatch({ alertStyle: style })} style={[styles.chip, on && styles.chipOn]}>
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={{ gap: 8 }}>
               <Text style={styles.settingLabel}>Energy lasts</Text>
               <View style={styles.chips}>
                 {INTERVAL_OPTIONS.map((min) => {
@@ -662,7 +770,7 @@ export default function App() {
             </View>
 
             <ChunkyButton
-              label="🔊 Test the loud alert"
+              label={discreet ? '📳 Test the alert' : '🔊 Test the loud alert'}
               face="#3A3566"
               edge="#1F1B44"
               textColor="#FFFFFF"
@@ -773,6 +881,8 @@ const styles = StyleSheet.create({
   timerSmall: { fontSize: 40 },
   timerCaption: { fontFamily: F.medium, color: C.muted, fontSize: 13, marginTop: -6, textAlign: 'center' },
 
+  meetingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, flexWrap: 'wrap' },
+  meetingLabel: { fontFamily: F.semibold, color: C.muted, fontSize: 14 },
   warning: { fontFamily: F.medium, color: C.gold, fontSize: 13, textAlign: 'center' },
 
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },

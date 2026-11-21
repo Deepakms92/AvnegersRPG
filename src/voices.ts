@@ -18,6 +18,8 @@ export type Voice = {
   levelUp: (title: string) => string;
   badge: (name: string) => string;
   card: (title: string) => string;
+  /** Encouragement during a timed card: halfway, and the final seconds. */
+  cheer: { half: string; end: string };
 };
 
 const task = (card: ChallengeCard | null, prefix: string) => (card ? ` ${prefix} ${card.text}` : '');
@@ -37,6 +39,7 @@ export const VOICES: Voice[] = [
     levelUp: (t) => `Level up! You are now a ${t}.`,
     badge: (n) => `Badge unlocked: ${n}!`,
     card: (t) => `Challenge complete: ${t}!`,
+    cheer: { half: "Halfway there, you've got this!", end: 'Five more seconds!' },
   },
   {
     id: 'sergeant',
@@ -52,6 +55,7 @@ export const VOICES: Voice[] = [
     levelUp: (t) => `Promotion! You are now a ${t}. Do not let it go to your head!`,
     badge: (n) => `You earned the ${n} medal. Wear it with pride!`,
     card: (t) => `Mission ${t}: complete!`,
+    cheer: { half: 'Halfway, soldier! Do not quit on me!', end: 'Five seconds! PUSH!' },
   },
   {
     id: 'grandma',
@@ -68,6 +72,7 @@ export const VOICES: Voice[] = [
     levelUp: (t) => `Look at you, a ${t} now! Grandma is so proud.`,
     badge: (n) => `A ${n} badge! I'll put it on the fridge.`,
     card: (t) => `You did the ${t}! What a treasure.`,
+    cheer: { half: "You're halfway, sweetie!", end: 'Almost done, dear. Five more seconds.' },
   },
   {
     id: 'robot',
@@ -84,6 +89,7 @@ export const VOICES: Voice[] = [
     levelUp: (t) => `Upgrade installed. Designation: ${t}.`,
     badge: (n) => `Achievement ${n} unlocked. I will add it to your file.`,
     card: (t) => `${t} executed successfully.`,
+    cheer: { half: '50 percent complete. Try not to fall over.', end: 'Five seconds remaining. Probably.' },
   },
   {
     id: 'pirate',
@@ -99,6 +105,7 @@ export const VOICES: Voice[] = [
     levelUp: (t) => `Ye've been promoted to ${t}! Raise the flag!`,
     badge: (n) => `Treasure found: the ${n} badge!`,
     card: (t) => `${t}, plundered!`,
+    cheer: { half: 'Halfway across the seas, matey!', end: 'Five more seconds! Land ho!' },
   },
   {
     id: 'zen',
@@ -114,6 +121,7 @@ export const VOICES: Voice[] = [
     levelUp: (t) => `You have grown. You are now ${t}.`,
     badge: (n) => `The ${n} badge. A step on the path.`,
     card: (t) => `${t}, complete. Namaste.`,
+    cheer: { half: 'Halfway. Keep breathing.', end: 'Five more breaths of time.' },
   },
 ];
 

@@ -7,6 +7,11 @@ you've been sitting too long and need to get up and move.
 
 ## What it does
 
+### First-run setup
+A 4-step welcome: meet Pip, choose how long you sit before a reminder and whether to remind on
+work days only, choose loud or discreet alerts, then grant notifications and step counting
+(each with a one-line reason).
+
 ### The game
 - **Energy bar.** Your energy drains while you sit. When it hits 0% you go into
   🧟 **Zombie mode**: the screen turns red and the app shouts at you until you move.
@@ -15,7 +20,8 @@ you've been sitting too long and need to get up and move.
   Pip Pro (Lv 5) → Pip Legend (Lv 7). Unlock hats (cap, sweatband, party hat, beanie, crown).
 - **Challenge cards.** Each alert deals a random card, like "10 squats" or "Take the stairs".
   🟢 Common 60%, 🔵 Rare 25% (+10 XP), 🟣 Epic 12% (+20 XP), 🟡 Legendary 3% (+40 XP).
-  Completed cards go into your collection (25 to find).
+  Completed cards go into your collection (25 to find). Timed cards (planks, walks, stretches)
+  have a countdown with spoken encouragement; finishing the timer completes the challenge.
 - **Voice personalities.** Coach Pip, Drill Sergeant (Lv 2), Grandma (Lv 3), Sarcastic Robot
   (Lv 4), Captain Pip (Lv 5) and Zen Master (Lv 6), each with their own lines, pitch and speed.
   Notifications are written in the chosen voice too.
@@ -40,6 +46,11 @@ you've been sitting too long and need to get up and move.
   timer. **⏰ Snooze 5 min** pauses the alerts briefly (no XP).
 - **Work hours.** Optionally remind only on chosen days between a start and end time
   (e.g. Mon–Fri, 09:00–18:00). Outside them Pip naps, and days off don't break your streak.
+- **Discreet mode.** Vibration only, no speech or sound: for open offices, or with a
+  smartwatch. Choose in setup or Settings.
+- **🤝 In a meeting.** Pause reminders for 30, 60 or 90 minutes from the app, or 60 minutes
+  from the notification's third button. The sitting clock keeps running, so if you're overdue
+  when the meeting ends, the reminder comes right away.
 - **Auto-reset on walking.** With the step counter enabled, about 30 steps counts as a move.
 - Settings, timer and game progress are saved on the device. On Android they're also included
   in the phone's automatic Google backup, so a reinstall usually restores them.
@@ -95,6 +106,7 @@ Or tap **Test the loud alert** in Game settings.
 | `src/schedule.ts` | Work hours, the sitting timer and which reminders to schedule |
 | `src/cards.ts`, `src/cardsUI.tsx` | Challenge cards, rarities and the collection grid |
 | `src/voices.ts` | Voice personalities and their lines |
+| `src/onboarding.tsx` | First-run setup screens |
 | `src/statsUI.tsx` | Stats screen: 14-day chart, response rate, shareable report |
 | `src/buddyData.ts`, `src/buddy.tsx` | Pip's evolution stages, hats and vector drawing |
 | `src/ui.tsx` | Game-style UI pieces: 3D buttons, energy bar, avatar, reward pop-up |

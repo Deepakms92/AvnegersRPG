@@ -1,11 +1,83 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, Vibration, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 import { CARDS, ChallengeCard, RARITY } from './cards';
+import { say } from './reminder';
 import { C, F } from './ui';
+import type { Voice } from './voices';
 
-/** The challenge card dealt for this alert, shown big. */
-export function ChallengeCardView({ card }: { card: ChallengeCard }) {
+function fmtSeconds(s: number) {
+  return s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}` : `${s}s`;
+}
+
+/**
+ * The challenge card dealt for this alert, shown big. Timed cards get a
+ * countdown with spoken encouragement; finishing it completes the challenge.
+ */
+export function ChallengeCardView({
+  card,
+  voice,
+  discreet,
+  onStart,
+  onFinish,
+}: {
+  card: ChallengeCard;
+  voice?: Voice;
+  discreet?: boolean;
+  onStart?: (seconds: number) => void;
+  onFinish?: () => void;
+}) {
   const r = RARITY[card.rarity];
+  const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [left, setLeft] = useState(card.seconds ?? 0);
+  const spoke = useRef({ half: false, end: false });
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
+
+  // Reset if a different card is dealt.
+  useEffect(() => {
+    setEndsAt(null);
+    setLeft(card.seconds ?? 0);
+  }, [card.id, card.seconds]);
+
+  useEffect(() => {
+    if (endsAt === null || !card.seconds) return;
+    const total = card.seconds;
+    const id = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      setLeft(remaining);
+      if (voice && !discreet) {
+        if (!spoke.current.half && total >= 20 && remaining <= total / 2) {
+          spoke.current.half = true;
+          say(voice.cheer.half, voice);
+        }
+        if (!spoke.current.end && total >= 15 && remaining <= 5 && remaining > 0) {
+          spoke.current.end = true;
+          say(voice.cheer.end, voice);
+        }
+      }
+      if (remaining === 0) {
+        clearInterval(id);
+        setEndsAt(null);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        Vibration.vibrate(200);
+        onFinishRef.current?.();
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, [endsAt, card.seconds, voice, discreet]);
+
+  const start = () => {
+    if (!card.seconds) return;
+    spoke.current = { half: false, end: false };
+    setLeft(card.seconds);
+    setEndsAt(Date.now() + card.seconds * 1000);
+    onStart?.(card.seconds);
+  };
+  const running = endsAt !== null;
+  const progress = card.seconds ? 1 - left / card.seconds : 0;
+
   return (
     <View style={[styles.card, { borderColor: r.color, shadowColor: r.color }]}>
       <View style={styles.cardTop}>
@@ -25,6 +97,23 @@ export function ChallengeCardView({ card }: { card: ChallengeCard }) {
           <Text style={styles.cardText}>{card.text}</Text>
         </View>
       </View>
+      {!!card.seconds && (
+        <View style={{ gap: 6 }}>
+          <View style={styles.timerTrack}>
+            <View style={[styles.timerFill, { width: `${progress * 100}%`, backgroundColor: r.color }]} />
+          </View>
+          <Pressable
+            onPress={running ? () => setEndsAt(null) : start}
+            style={[styles.timerBtn, { borderColor: r.color }]}
+            accessibilityRole="button"
+            accessibilityLabel={running ? `Stop timer, ${left} seconds left` : `Start ${card.seconds} second timer`}
+          >
+            <Text style={[styles.timerBtnText, { color: r.color }]}>
+              {running ? `⏸  ${fmtSeconds(left)} left · tap to stop` : `▶  Start ${fmtSeconds(card.seconds)} timer`}
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -87,6 +176,10 @@ const styles = StyleSheet.create({
   cardEmoji: { fontSize: 40 },
   cardTitle: { fontFamily: F.bold, color: C.text, fontSize: 20 },
   cardText: { fontFamily: F.medium, color: C.muted, fontSize: 14, marginTop: 2 },
+  timerTrack: { height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' },
+  timerFill: { height: '100%', borderRadius: 4 },
+  timerBtn: { borderWidth: 1.5, borderRadius: 12, paddingVertical: 9, alignItems: 'center' },
+  timerBtnText: { fontFamily: F.bold, fontSize: 15, fontVariant: ['tabular-nums'] },
   teaser: {
     alignSelf: 'stretch',
     borderRadius: 14,

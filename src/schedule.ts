@@ -82,6 +82,8 @@ export type TimerInput = {
   lastMovedAt: number;
   intervalMin: number;
   snoozeUntil: number;
+  /** "In a meeting" pause: no alerts until then. */
+  pausedUntil?: number;
   schedule: WorkSchedule;
 };
 
@@ -93,11 +95,13 @@ export function timerView(st: TimerInput, now: number) {
   // The sitting clock starts at your last move, or at the start of today's work hours.
   const base = w ? Math.max(st.lastMovedAt, w.start) : now;
   const dueAt = base + intervalMs;
-  const snoozed = st.enabled && !offDuty && now >= dueAt && now < st.snoozeUntil;
-  const overdue = st.enabled && !offDuty && now >= dueAt && !snoozed;
+  const paused = st.enabled && !offDuty && now < (st.pausedUntil ?? 0);
+  const snoozed = st.enabled && !offDuty && !paused && now >= dueAt && now < st.snoozeUntil;
+  const overdue = st.enabled && !offDuty && !paused && now >= dueAt && !snoozed;
   const energy = !st.enabled || offDuty ? 1 : Math.max(0, Math.min(1, (dueAt - now) / intervalMs));
   return {
     offDuty,
+    paused,
     base,
     dueAt,
     snoozed,
@@ -139,7 +143,8 @@ export function planReminders(st: TimerInput, now: number): PlannedReminder[] {
   };
 
   const w = windowAt(now, st.schedule);
-  if (w) chain(Math.max(st.lastMovedAt, w.start), w.end, [0, ...NAG_OFFSETS_MIN], st.snoozeUntil);
+  const quietUntil = Math.max(st.snoozeUntil, st.pausedUntil ?? 0);
+  if (w) chain(Math.max(st.lastMovedAt, w.start), w.end, [0, ...NAG_OFFSETS_MIN], quietUntil);
 
   let t = w ? w.end : now;
   for (let i = 0; i < FUTURE_WINDOWS; i++) {

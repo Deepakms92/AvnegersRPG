@@ -20,6 +20,12 @@ export type PersistedState = {
   cardId: string | null;
   voiceId: string;
   hatId: string;
+  /** 'loud' speaks alerts out loud; 'discreet' only vibrates (for offices and meetings). */
+  alertStyle: 'loud' | 'discreet';
+  /** Epoch ms until which reminders are paused ("In a meeting"); 0 = not paused. */
+  pausedUntil: number;
+  /** Whether the first-run setup has been completed. */
+  onboarded: boolean;
 };
 
 export const DEFAULT_STATE: PersistedState = {
@@ -33,6 +39,9 @@ export const DEFAULT_STATE: PersistedState = {
   cardId: null,
   voiceId: 'coach',
   hatId: 'none',
+  alertStyle: 'loud',
+  pausedUntil: 0,
+  onboarded: false,
 };
 
 export async function loadState(): Promise<PersistedState> {
@@ -40,7 +49,13 @@ export async function loadState(): Promise<PersistedState> {
     const raw = await AsyncStorage.getItem(KEY);
     if (!raw) return DEFAULT_STATE;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_STATE, ...parsed, schedule: { ...DEFAULT_SCHEDULE, ...parsed.schedule } };
+    return {
+      ...DEFAULT_STATE,
+      // People who used WellPing before the setup screen existed don't need to see it.
+      onboarded: true,
+      ...parsed,
+      schedule: { ...DEFAULT_SCHEDULE, ...parsed.schedule },
+    };
   } catch {
     return DEFAULT_STATE;
   }

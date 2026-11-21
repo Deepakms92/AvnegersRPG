@@ -12,11 +12,16 @@ import { Voice, voiceById } from './voices';
 export const CHANNEL_ID = 'move-reminder-loud';
 const CHANNEL_ID_FALLBACK = 'move-reminder';
 const INFO_CHANNEL_ID = 'move-reminder-info';
+/** Discreet mode: vibrate only, no sound (Android channels can't change sound later). */
+const QUIET_CHANNEL_ID = 'move-reminder-quiet';
 
 export const CATEGORY_ID = 'move-reminder';
 export const ACTION_MOVED = 'moved';
 export const ACTION_SNOOZE = 'snooze';
+export const ACTION_MEETING = 'meeting';
 export const SNOOZE_MIN = 5;
+/** Length of the "In a meeting" pause from the notification button. */
+export const MEETING_MIN = 60;
 
 /** What the chosen voice says when it's time to move (with the dealt card, if any). */
 export function reminderLine(state: PersistedState, minutes: number) {
@@ -70,6 +75,18 @@ export async function setupNotifications() {
     console.warn('[move-reminder] Could not create the info channel.', e);
   }
   try {
+    await Notifications.setNotificationChannelAsync(QUIET_CHANNEL_ID, {
+      name: 'Move reminders (discreet)',
+      description: 'Vibrate-only reminders for offices and meetings',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: null,
+      vibrationPattern: [0, 400, 250, 400],
+      enableVibrate: true,
+    });
+  } catch (e) {
+    console.warn('[move-reminder] Could not create the discreet channel.', e);
+  }
+  try {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       ...BASE_CHANNEL,
       sound: 'default',
@@ -109,6 +126,11 @@ async function setupActions() {
         buttonTitle: `⏰ Snooze ${SNOOZE_MIN} min`,
         options: { opensAppToForeground: openApp },
       },
+      {
+        identifier: ACTION_MEETING,
+        buttonTitle: `🤝 In a meeting (${MEETING_MIN} min)`,
+        options: { opensAppToForeground: openApp },
+      },
     ]);
   } catch (e) {
     console.warn('[move-reminder] Could not register notification buttons.', e);
@@ -132,12 +154,13 @@ export async function scheduleForState(state: PersistedState) {
   const voice = voiceById(state.voiceId);
   const card = cardById(state.cardId);
   const cardTitle = card ? ` ${RARITY[card.rarity].icon} ${card.title}` : '';
+  const discreet = state.alertStyle === 'discreet';
   for (const r of planReminders(state, Date.now())) {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: r.first ? `🧟 Energy at 0%!${cardTitle}` : `⚠️ Still sitting: ${r.sittingMin} min`,
         body: r.first ? voice.remind(r.sittingMin, card) : `${voice.nag(r.sittingMin)}${card ? ` ${card.text}` : ''}`,
-        sound: 'default',
+        sound: discreet ? false : 'default',
         vibrate: [0, 800, 400, 800],
         priority: Notifications.AndroidNotificationPriority.MAX,
         categoryIdentifier: CATEGORY_ID,
@@ -146,7 +169,7 @@ export async function scheduleForState(state: PersistedState) {
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
         date: r.when,
-        channelId: activeChannelId,
+        channelId: discreet && Platform.OS === 'android' ? QUIET_CHANNEL_ID : activeChannelId,
       },
     });
   }
@@ -181,12 +204,15 @@ export async function configureAudio() {
   }
 }
 
-/** Speak the reminder out loud at full volume, in the chosen voice, and buzz the phone. */
-export function alertLoudly(text: string, voice: Voice) {
+/**
+ * The in-app alert: buzz the phone, and (unless in discreet mode) speak the
+ * reminder out loud at full volume in the chosen voice.
+ */
+export function alertLoudly(text: string, voice: Voice, discreet = false) {
   Speech.stop();
-  Vibration.vibrate([0, 800, 400, 800, 400, 800]);
+  Vibration.vibrate(discreet ? [0, 400, 250, 400] : [0, 800, 400, 800, 400, 800]);
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-  say(text, voice);
+  if (!discreet) say(text, voice);
 }
 
 /** Speak a short message (praise, level up…) at full volume in the chosen voice. */
