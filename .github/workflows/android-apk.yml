@@ -44,6 +44,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v5
         with:
-          name: move-reminder-apk
+          name: wellping-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

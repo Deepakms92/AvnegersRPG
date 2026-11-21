@@ -30,8 +30,8 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild \
-            -workspace MoveReminder.xcworkspace \
-            -scheme MoveReminder \
+            -workspace WellPing.xcworkspace \
+            -scheme WellPing \
             -configuration Release \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
@@ -42,11 +42,11 @@ jobs:
       - name: Package the app
         run: |
           cd ios/build/Build/Products/Release-iphonesimulator
-          ditto -c -k --sequesterRsrc --keepParent MoveReminder.app "$GITHUB_WORKSPACE/MoveReminder-simulator.zip"
+          ditto -c -k --sequesterRsrc --keepParent WellPing.app "$GITHUB_WORKSPACE/WellPing-simulator.zip"
 
       - name: Upload simulator app
         uses: actions/upload-artifact@v5
         with:
-          name: move-reminder-ios-simulator
-          path: MoveReminder-simulator.zip
+          name: wellping-ios-simulator
+          path: WellPing-simulator.zip
           if-no-files-found: error

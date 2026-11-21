@@ -1,22 +1,24 @@
 {
   "expo": {
-    "name": "Move Reminder",
-    "slug": "move-reminder",
-    "version": "0.1.0",
+    "name": "WellPing",
+    "slug": "wellping",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.example.movereminder",
+      "supportsTablet": false,
+      "bundleIdentifier": "com.deesha.movereminder",
       "infoPlist": {
-        "NSMotionUsageDescription": "Used to notice when you walk around so the sitting timer resets automatically."
-      }
+        "NSMotionUsageDescription": "WellPing uses your step count to notice when you get up and walk, so your sitting timer resets automatically. Step data never leaves your phone.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "buildNumber": "1"
     },
     "android": {
-      "package": "com.example.movereminder",
+      "package": "com.deesha.movereminder",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#1A0B45",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -25,17 +27,25 @@
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.VIBRATE",
         "android.permission.ACTIVITY_RECOGNITION",
-        "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.RECEIVE_BOOT_COMPLETED"
       ],
       "predictiveBackGestureEnabled": false,
-      "allowBackup": true
+      "allowBackup": true,
+      "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "plugins": [
       [
         "expo-notifications",
         {
-          "color": "#FF7043"
+          "icon": "./assets/notification-icon.png",
+          "color": "#9BFF3B"
         }
       ],
       [
@@ -46,10 +56,20 @@
           "enableBackgroundPlayback": false,
           "enableBackgroundRecording": false
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0A0F2C"
+        }
       ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "backgroundColor": "#0A0F2C"
   }
 }

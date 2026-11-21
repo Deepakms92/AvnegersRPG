@@ -1,9 +1,9 @@
-# Move Reminder (POC)
+# WellPing
 
-A small React Native (Expo) app for **iOS and Android** that **tells you out loud** when
+A React Native (Expo) app for **iOS and Android** that **tells you out loud** when
 you've been sitting too long and need to get up and move.
 
-![Normal and overdue states](docs/preview.png)
+![WellPing screenshots](docs/screenshots/play/1.png)
 
 ## What it does
 
@@ -100,11 +100,23 @@ Or tap **Test the loud alert** in Game settings.
 ## Builds from GitHub Actions
 
 - **Android APK:** every push runs **Build Android APK**. Open the run on the **Actions** tab
-  and download the `move-reminder-apk` artifact.
+  and download the `wellping-apk` artifact.
 - **iOS Simulator app:** run **Build iOS Simulator app** manually from the **Actions** tab
-  (it uses macOS build minutes). Download `move-reminder-ios-simulator`, unzip it, start the
-  iOS Simulator (Xcode → Open Developer Tool → Simulator) and drag `MoveReminder.app` onto it.
+  (it uses macOS build minutes). Download `wellping-ios-simulator`, unzip it, start the
+  iOS Simulator (Xcode → Open Developer Tool → Simulator) and drag `WellPing.app` onto it.
   This doesn't install on a real iPhone; that needs Apple signing (see above).
+
+## Publishing to the stores
+
+Everything for the store listings is in [`docs/store-listing.md`](docs/store-listing.md): name,
+descriptions, keywords, privacy answers, permission reasons and a submission checklist.
+
+- App ID (both stores): `com.deesha.movereminder`. It can't be changed after the first upload.
+- Privacy policy page: [`docs/privacy/index.html`](docs/privacy/index.html). Host it and put
+  the link in both stores.
+- Screenshots: [`docs/screenshots/play`](docs/screenshots/play) (1080 × 1920) and
+  [`docs/screenshots/appstore`](docs/screenshots/appstore) (1290 × 2796).
+- iPad isn't supported (`supportsTablet: false`), so no iPad screenshots are needed.
 
 ## Ideas
 
