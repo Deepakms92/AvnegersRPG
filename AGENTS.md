@@ -1,5 +1,20 @@
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
+## Platforms: iOS and Android (both required)
+
+This app ships on **both iOS and Android**. Every feature and change must work on both.
+
+- Don't add Android-only or iOS-only behavior unless there's no alternative. When a platform
+  can't do something, use `Platform.OS` with a sensible fallback for the other platform
+  (e.g. Android can run notification buttons in the background; on iOS they should open the app).
+- Configure both platforms in `app.json` (`ios` and `android` sections, iOS `infoPlist`
+  usage descriptions for every permission used).
+- Only use libraries that support both iOS and Android.
+- Document platform differences in the README.
+- Known differences today: Android can play reminders on the alarm stream; iOS respects the
+  silent switch (Critical Alerts need special Apple approval). iOS allows at most 64 pending
+  local notifications; keep the scheduled nag count below that.
+
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
